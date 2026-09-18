@@ -109,10 +109,10 @@ if __name__ == "__main__":
     
     if len(sys.argv) < 2:
         print("💡 使用说明:")
-        print("  python restore_xqcn_by_adb.py <ADB_SERIAL> [xqcn_file_path]")
+        print("  python qc_restore_xqcn.py <ADB_SERIAL> [xqcn_file_path]")
         print("\n  示例:")
-        print("  python restore_xqcn_by_adb.py NAVR120201")
-        print("  python restore_xqcn_by_adb.py 10.125.176.206:5555 D:\\my_backup.xqcn\n")
+        print("  python qc_restore_xqcn.py NAVR120201")
+        print("  python qc_restore_xqcn.py 10.125.176.206:5555 D:\\my_backup.xqcn\n")
         sys.exit(1)
         
     adb_serial = sys.argv[1]
