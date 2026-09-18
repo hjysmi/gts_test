@@ -56,7 +56,8 @@ def main():
         # step2: Send AT command and get exact response
         # To run query: use 'AT+ESBP?'
         # To run write: use 'AT+ESBP=16,"440","10"' (or similar)
-        at_command = r'AT+ESBP?'
+        # at_command = r'AT+ESBP?'
+        at_command = r'AT+ESBP=16,"310","120"'
         
         response_lines = send_and_get_at_response(device, at_command)
         
