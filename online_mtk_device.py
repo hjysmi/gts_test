@@ -7,10 +7,67 @@ import mace
 import time
 import os
 import re
+import subprocess
 
 # Default configuration constants
 DEFAULT_OUT_DIR = r"D:\share_179\0519\bank_prod\out"
 DEFAULT_LOG_FILE = "modem_log.elg"
+
+
+def control_mtk_logger(action):
+    """
+    Control MTK logger via ADB commands.
+    :param action: 'stop', 'start', or 'switch_usb'
+    """
+    commands = {
+        "stop": [
+            "adb", "shell", "am", "broadcast", 
+            "-a", "com.debug.loggerui.ADB_CMD", 
+            "-e", "cmd_name", "stop", 
+            "--ei", "cmd_target", "-1", 
+            "-n", "com.debug.loggerui/.framework.LogReceiver"
+        ],
+        "start": [
+            "adb", "shell", "am", "broadcast", 
+            "-a", "com.debug.loggerui.ADB_CMD", 
+            "-e", "cmd_name", "start", 
+            "--ei", "cmd_target", "-1", 
+            "-n", "com.debug.loggerui/.framework.LogReceiver"
+        ],
+        "switch_usb": [
+            "adb", "shell", "am", "broadcast", 
+            "-a", "com.debug.loggerui.ADB_CMD", 
+            "-e", "cmd_name", "switch_modem_log_mode", 
+            "--ei", "cmd_target", "1", 
+            "-n", "com.debug.loggerui/.framework.LogReceiver"
+        ]
+    }
+    
+    cmd = commands.get(action)
+    if not cmd:
+        print(f"[WARNING] Unknown MTK logger action: {action}")
+        return
+        
+    print(f"[*] Executing MTK logger command for '{action}'...")
+    try:
+        # We run the command and wait for it. We don't raise an exception 
+        # to prevent blocking the entire flow if ADB/device is not ready,
+        # but we print the outcome.
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            print(f"[+] MTK logger '{action}' command succeeded.")
+        else:
+            print(f"[WARNING] MTK logger '{action}' command returned exit code {result.returncode}.")
+            print(f"  Stdout: {result.stdout.strip()}")
+            print(f"  Stderr: {result.stderr.strip()}")
+    except Exception as e:
+        print(f"[ERROR] Exception running ADB command for MTK logger '{action}': {e}")
+        
+    # Wait for 5 seconds as requested to ensure the command has finished processing
+    # on the device before executing the next step.
+    print(f"[*] Sleeping 5 seconds after '{action}'...")
+    time.sleep(5)
+
 
 
 def connect_to_device(device_id="auto", database="auto"):
@@ -154,6 +211,11 @@ def run_at_command_flow(at_command=r'AT+ESBP?', log_filename=DEFAULT_LOG_FILE, o
     response_lines = []
     parsed_info = None
     try:
+        # 0. MTK logger preparation (stop -> switch to USB -> start)
+        control_mtk_logger("stop")
+        control_mtk_logger("switch_usb")
+        control_mtk_logger("start")
+
         # 1. 连接设备
         device = connect_to_device("auto", database="auto")
         
@@ -168,6 +230,10 @@ def run_at_command_flow(at_command=r'AT+ESBP?', log_filename=DEFAULT_LOG_FILE, o
         
     except Exception as e:
         print(f"[ERROR] AT command flow failed: {e}")
+    finally:
+        # 5. MTK logger cleanup (stop log)
+        control_mtk_logger("stop")
+        
     return response_lines, parsed_info
 
 
