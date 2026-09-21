@@ -237,13 +237,13 @@ def main():
   运行示例：
 
  # 切换到天线 2 (Config1, NV=0x11)
- python efs.py 11
+ python qc_efs_tx.py 11
  
  # 切换到天线 3 (Config2, NV=0x22)
- python efs.py 22
+ python qc_efs_tx.py 22
  
  # 恢复默认配置
- python efs.py default
+ python qc_efs_tx.py default
     """
     parser = argparse.ArgumentParser(description="Qualcomm ASDiv Config Switching CLI Tool")
     parser.add_argument(
