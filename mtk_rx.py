@@ -187,7 +187,7 @@ def save_device_logs(device, out_dir=DEFAULT_OUT_DIR, filename=DEFAULT_LOG_FILE)
         return None
 
 
-def run_antenna_rx_test(scenario_id, network_type, log_filename=DEFAULT_LOG_FILE, out_dir=DEFAULT_OUT_DIR):
+def run_antenna_rx_test(scenario_id, network_type, log_filename=DEFAULT_LOG_FILE, out_dir=DEFAULT_OUT_DIR, control_logger=True, device=None):
     """
     Run full Antenna RX Test AT command flow for a given scenario and network type.
     """
@@ -210,16 +210,19 @@ def run_antenna_rx_test(scenario_id, network_type, log_filename=DEFAULT_LOG_FILE
     print(f"  Commands: {', '.join(commands)}")
     print("="*60 + "\n")
     
-    device = None
     success = True
     try:
         # 1. MTK logger preparation (stop -> switch to USB -> start)
-        control_mtk_logger("stop")
-        control_mtk_logger("switch_usb")
-        control_mtk_logger("start")
+        if control_logger:
+            control_mtk_logger("stop")
+            control_mtk_logger("switch_usb")
+            control_mtk_logger("start")
 
         # 2. Connect device
-        device = connect_to_device("auto", database="auto")
+        if device is None:
+            device = connect_to_device("auto", database="auto")
+        else:
+            print("[*] Reusing pre-connected MACE device for RX switching.")
         
         # 3. Send commands sequentially
         for idx, cmd in enumerate(commands):
@@ -254,8 +257,9 @@ def run_antenna_rx_test(scenario_id, network_type, log_filename=DEFAULT_LOG_FILE
         success = False
     finally:
         # 5. Clean up logger
-        print("[*] Performing cleanup...")
-        control_mtk_logger("stop")
+        if control_logger:
+            print("[*] Performing cleanup...")
+            control_mtk_logger("stop")
         
     return success
 
