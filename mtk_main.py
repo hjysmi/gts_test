@@ -109,7 +109,7 @@ def validate_params(params):
     print("[+] Parameters validated successfully.")
     return True
 
-def run_orchestration_flow(params):
+def run_mtk_flow(params):
     """
     Run the full end-to-end testing orchestration flow:
     1. Stop MTK logger.
@@ -124,7 +124,13 @@ def run_orchestration_flow(params):
     print("\n" + "="*70)
     print("STARTING MTK ANTENNA TESTING ORCHESTRATION FLOW")
     print("="*70)
-    
+    try:
+        # Validate parameters dictionary
+        validate_params(params)
+    except ValueError as e:
+        print(f"\n[PARAM ERROR] Parameter validation failed: {e}")
+        sys.exit(1)
+
     # Step 1: Stop log
     print("\n--- Step 1: Stopping MTK Logger ---")
     mtk_rx_test.control_mtk_logger("stop")
@@ -237,13 +243,8 @@ def main():
         params["rx_state"] = args.rx_state
         
     try:
-        # Validate parameters dictionary
-        validate_params(params)
-        # Execute the main orchestrated flow
-        run_orchestration_flow(params)
-    except ValueError as e:
-        print(f"\n[PARAM ERROR] Parameter validation failed: {e}")
-        sys.exit(1)
+        # Execute the main flow
+        run_mtk_flow(params)
     except Exception as e:
         print(f"\n[FATAL ERROR] Flow execution failed: {e}")
         sys.exit(1)
