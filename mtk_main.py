@@ -118,7 +118,7 @@ def run_mtk_flow(params):
     4. Connect to MACE ONCE (Device is now connected before switching network/switching TX/RX).
     5. Call android_network_manager to switch network type.
     6. Perform TX switching via mtk_tx.py reusing the device.
-    7. Perform RX switching via mtk_rx_test.py reusing the device.
+    7. Perform RX switching via mtk_rx.py reusing the device.
     8. Stop MTK logger.
     """
     print("\n" + "="*70)
@@ -133,15 +133,15 @@ def run_mtk_flow(params):
 
     # Step 1: Stop log
     print("\n--- Step 1: Stopping MTK Logger ---")
-    mtk_rx_test.control_mtk_logger("stop")
+    mtk_rx.control_mtk_logger("stop")
     
     # Step 2: Switch modem mode to USB mode
     print("\n--- Step 2: Setting Modem Logging Mode to USB ---")
-    mtk_rx_test.control_mtk_logger("switch_usb")
+    mtk_rx.control_mtk_logger("switch_usb")
     
     # Step 3: Start log
     print("\n--- Step 3: Starting MTK Logger ---")
-    mtk_rx_test.control_mtk_logger("start")
+    mtk_rx.control_mtk_logger("start")
     
     device = None
     tx_ok = False
@@ -179,7 +179,7 @@ def run_mtk_flow(params):
             print("[ERROR] TX Antenna Force configuration failed. Aborting flow.")
             return False
             
-        # Step 6: Switch RX via mtk_rx_test.py
+        # Step 6: Switch RX via mtk_rx.py
         print("\n--- Step 6: Setting RX Antenna Test ---")
         print("[*] Switching RX (reusing pre-connected device, logger control is skipped)...")
         
@@ -187,7 +187,7 @@ def run_mtk_flow(params):
         scenario_id = RX_SCENARIOS_MAP[params["rx_scenario"].upper()]
         
         rx_net_type = "4g" if params["rat"].upper() in ("LTE", "LTE_TDD") else "nr"
-        rx_ok = mtk_rx_test.run_antenna_rx_test(
+        rx_ok = mtk_rx.run_antenna_rx_test(
             scenario_id=scenario_id,
             network_type=rx_net_type,
             control_logger=False,
@@ -201,7 +201,7 @@ def run_mtk_flow(params):
     finally:
         # Step 7: Stop log
         print("\n--- Step 7: Stopping MTK Logger ---")
-        mtk_rx_test.control_mtk_logger("stop")
+        mtk_rx.control_mtk_logger("stop")
     
     print("\n" + "="*70)
     if tx_ok and rx_ok:

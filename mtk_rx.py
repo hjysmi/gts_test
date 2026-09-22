@@ -12,7 +12,7 @@ import time
 import mace
 
 # Default configuration constants
-DEFAULT_OUT_DIR = r"D:\share_179\0519\bank_prod\out"
+DEFAULT_OUT_DIR = "."
 DEFAULT_LOG_FILE = "antenna_test_log.elg"
 
 # Test Scenarios definition based on docs/antenna_rx_test_at_commands.html
