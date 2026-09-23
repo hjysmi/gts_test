@@ -18,6 +18,7 @@ import android_network_manager
 
 # Allowed values for validation
 ALLOWED_RATS = ["LTE", "LTE_ONLY", "NR", "NR_ONLY"]
+ALLOWED_TX_VALUES = ["tx0", "tx1", "tx2", "tx3"]
 ALLOWED_ANT_VALUES = ["0", "00", "1", "11", "2", "22", "3", "33", "default", "FF"]
 ALLOWED_RX_MODES = ["combine", "rx0", "rx1", "rx2", "rx3"]
 
@@ -29,7 +30,7 @@ def validate_params(params):
     if not isinstance(params, dict):
         raise ValueError("Parameters must be passed as a dictionary class.")
         
-    required_keys = ["serial", "qcn_file", "rat", "ant_value", "network_mask"]
+    required_keys = ["serial", "qcn_file", "rat", "tx", "ant_value", "network_mask"]
     for key in required_keys:
         if key not in params:
             raise ValueError(f"Missing required parameter key: '{key}'")
@@ -54,12 +55,17 @@ def validate_params(params):
     if rat not in ALLOWED_RATS:
         raise ValueError(f"Invalid RAT: '{params['rat']}'. Must be one of: {ALLOWED_RATS}")
         
-    # 4. Validate ANT value
+    # 4. Validate TX parameter
+    tx = str(params["tx"]).lower()
+    if tx not in ALLOWED_TX_VALUES:
+        raise ValueError(f"Invalid 'tx': '{params['tx']}'. Must be one of: {ALLOWED_TX_VALUES}")
+        
+    # 5. Validate ANT value
     ant_value = str(params["ant_value"]).lower()
     if ant_value not in ALLOWED_ANT_VALUES:
         raise ValueError(f"Invalid 'ant_value': '{params['ant_value']}'. Must be one of: {ALLOWED_ANT_VALUES}")
         
-    # 5. Validate RX mode
+    # 6. Validate RX mode
     if rat in ["LTE", "LTE_ONLY"]:
         if "rx_mode" not in params:
             raise ValueError("Parameter 'rx_mode' is required when RAT is LTE.")
@@ -67,12 +73,12 @@ def validate_params(params):
         if rx_mode not in ALLOWED_RX_MODES:
             raise ValueError(f"Invalid 'rx_mode': '{params['rx_mode']}'. Must be one of: {ALLOWED_RX_MODES}")
             
-    # 6. Validate SIM Slot
+    # 7. Validate SIM Slot
     sim_slot = params.get("sim_slot", 0)
     if sim_slot not in (0, 1):
         raise ValueError(f"Invalid 'sim_slot': {sim_slot}. Must be 0 or 1.")
         
-    # 7. Validate Network Mask
+    # 8. Validate Network Mask
     mask_str = params["network_mask"].upper() if isinstance(params["network_mask"], str) else ""
     try:
         android_network_manager.NetworkMask[mask_str]
@@ -102,6 +108,7 @@ def run_qc_flow(params):
     serial = params["serial"]
     qcn_file = params["qcn_file"]
     rat = params["rat"].upper()
+    tx_val = str(params["tx"]).lower()
     ant_value = str(params["ant_value"])
     sim_slot = params.get("sim_slot", 0)
     network_mask = params["network_mask"].upper()
@@ -110,34 +117,19 @@ def run_qc_flow(params):
     print("STARTING QUALCOMM ANTENNA TESTING ORCHESTRATION FLOW")
     print("="*70)
     
-    # Step 1: Write and Query NV73841 & NV73971 (previously Step 2)
+    # Step 1: Write and Query NV73841 & NV73971
     print("\n--- Step 1: Writing and Querying NV Items ---")
-    # Constant JSON NV73971 value
-    nv_73971_json = json.dumps({
-        "Version": 1,
-        "Master_NV_1X": "DO NOT CARE",
-        "Master_NV_HDR": "DO NOT CARE",
-        "Master_NV_GSM": "ENABLE",
-        "Master_NV_WCDMA": "ENABLE",
-        "Master_NV_TDSCDMA": "DO NOT CARE",
-        "Master_NV_LTE": "ENABLE",
-        "Master_NV_WLAN": "DO NOT CARE",
-        "Master_NV_NR5G": "ENABLE",
-        "Reserved": [0, 0, 0, 0, 0]
-    })
-    
-    # 1a. Modify NVs
-    print("[*] Setting NV 73841 (force antenna path) to 1...")
-    qc_nv.modify_nv_for_device(target_adb_serial=serial, nv_id="73841", nv_value="1")
+
+    # 1a. Modify NV 73971 (ASDiv bands master) to JSON constant
     print("[*] Setting NV 73971 (ASDiv bands master) to JSON constant...")
-    qc_nv.modify_nv_for_device(target_adb_serial=serial, nv_id="73971", nv_value=nv_73971_json)
-    
-    # 1b. Query and verify NVs
-    print("\n[*] Verifying NV writes via query...")
-    qc_nv.query_nv_for_device(target_adb_serial=serial, nv_id="73841")
+    qc_nv.modify_nv_for_device(target_adb_serial=serial, nv_id="73971", nv_value=qc_nv.NV_73971_JSON)
     qc_nv.query_nv_for_device(target_adb_serial=serial, nv_id="73971")
+
+    # 1b. Modify NV 73841 according to selected tx
+    print(f"[*] Setting NV 73841 according to TX target '{tx_val.upper()}'...")
+    qc_nv.set_antenna_tx(target_adb_serial=serial, tx=tx_val)
     
-    # Step 2: Switch Network Type via android_network_manager (previously Step 3)
+    # Step 2: Switch Network Type via android_network_manager
     print("\n--- Step 2: Setting Network Type Mask ---")
     mask_enum = android_network_manager.NetworkMask[network_mask]
         
@@ -149,14 +141,14 @@ def run_qc_flow(params):
     if not net_switch_ok:
         print("[WARNING] Network switch failed. Proceeding with remaining steps.")
         
-    # Step 3: Switch TX (ASDiv Config) via qc_efs_tx (previously Step 4)
+    # Step 3: Switch TX (ASDiv Config) via qc_efs_tx
     print("\n--- Step 3: Configuring TX Antenna (ASDiv) ---")
     print(f"[*] Setting ASDiv config path to: {ant_value}")
     tx_ok = qc_efs_tx.switch_asdiv_config(value=ant_value, client_name="QcOrchestrationASDiv")
     if not tx_ok:
         print("[WARNING] ASDiv config write returned False.")
         
-    # Step 4: Switch LTE RX Path via qc_lte_rx (previously Step 5)
+    # Step 4: Switch LTE RX Path via qc_lte_rx
     print("\n--- Step 4: Configuring LTE RX Paths ---")
     if rat in ["NR", "NR_ONLY"]:
         print("[INFO] Target network mode is NR (5G). SKIPPING Step 4 (LTE RX selection).")
@@ -167,7 +159,7 @@ def run_qc_flow(params):
         if not rx_ok:
             print("[WARNING] LTE Rx path selection returned False.")
             
-    # Step 5: Restore XQCN (previously Step 1, now moved to last step)
+    # Step 5: Restore XQCN (moved to last step)
     print("\n--- Step 5: Restoring QCN/XQCN Backup ---")
     print(f"[*] Restoring backup from full path: {qcn_file}")
     qc_restore_xqcn.restore_xqcn_for_device(target_adb_serial=serial, xqcn_path=qcn_file)
@@ -185,6 +177,8 @@ def main():
     parser.add_argument("--qcn-file", required=True, help="Absolute full path to the backup .qcn / .xqcn file")
     parser.add_argument("--rat", required=True, choices=["LTE", "LTE_ONLY", "NR", "NR_ONLY"], 
                         help="Target network tech: LTE or NR", type=str.upper)
+    parser.add_argument("--tx", required=True, choices=["tx0", "tx1", "tx2", "tx3"], 
+                        help="TX antenna target: tx0 (0), tx1 (17), tx2 (34), tx3 (51)", type=str.lower)
     parser.add_argument("--ant-value", required=True, choices=["0", "00", "1", "11", "2", "22", "3", "33", "default", "FF"], 
                         help="ASDiv TX antenna override target selection")
     parser.add_argument("--rx-mode", choices=["combine", "rx0", "rx1", "rx2", "rx3"], 
@@ -201,6 +195,7 @@ def main():
         "serial": args.serial,
         "qcn_file": args.qcn_file,
         "rat": args.rat,
+        "tx": args.tx,
         "ant_value": args.ant_value,
         "sim_slot": args.sim_slot,
         "network_mask": args.network_mask

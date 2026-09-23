@@ -27,6 +27,7 @@
 | `--serial` | `"serial"` | `str` | **是** | *非空字符串* | **目标 ADB 序列号**。<br>• 匹配手机的 adb 序列号（如 `N2FM220209`）以供 QUTS 与 ADB 精准下发控制。 |
 | `--qcn-file` | `"qcn_file"` | `str` | **是** | *合法的文件路径* | **QCN/XQCN 备份文件的完整绝对路径**。<br>• 强校验：如果文件不存在或不是合法绝对路径，将立刻安全拦截。 |
 | `--rat` | `"rat"` | `str` | **是** | `LTE`, `LTE_ONLY`, `NR`, `NR_ONLY` | **测试目标通信制式**。<br>• `LTE` / `LTE_ONLY` 代表 4G 模式。<br>• `NR` / `NR_ONLY` 代表 5G 模式。 |
+| `--tx` | `"tx"` | `str` | **是** | `tx0`, `tx1`, `tx2`, `tx3` | **发射天线测试目标 (NV 73841)**。<br>• `tx0`: 测 TX0，写入 NV 73841 = `0` (0x00)<br>• `tx1`: 测 TX1，写入 NV 73841 = `17` (0x11)<br>• `tx2`: 测 TX2，写入 NV 73841 = `34` (0x22)<br>• `tx3`: 测 TX3，写入 NV 73841 = `51` (0x33) |
 | `--ant-value` | `"ant_value"` | `str` | **是** | `0`, `00`, `1`, `11`, `2`, `22`, `3`, `33`, `default`, `FF` | **ASDiv 天线强迫值**（物理发射天线设定）。<br>• `00` / `0`: 强迫 Config0 (ANT1)<br>• `11` / `1`: 强迫 Config1 (ANT2)<br>• `22` / `2`: 强迫 Config2 (ANT3)<br>• `33` / `3`: 强迫 Config3 (ANT4)<br>• `FF` / `default`: 恢复默认自动切换。 |
 | `--rx-mode` | `"rx_mode"` | `str` | *条件* | `combine`, `rx0`, `rx1`, `rx2`, `rx3` | **LTE RX 路径强迫配置模式**。<br>• **LTE** 下：**必填**参数。<br>• **NR** 下：**自动忽略并跳过**该步骤。 |
 | `--network-mask`| `"network_mask"`| `str` | **是** | `LTE_ONLY`, `NR_ONLY`, `NR_LTE`, `DEFAULT` | **测试目标网络掩码**。<br>• **必填**参数。指定切换后的网络屏蔽状态。<br>• 校验规则：必须匹配 `android_network_manager.py` 底层定义的网络类型。 |
@@ -57,12 +58,12 @@
 
 #### A. 4G LTE 场景：NV 覆盖、4G网络锁定、TX 强迫、RX0 强迫、XQCN 恢复
 ```bash
-python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Avenger_0914.xqcn --rat LTE --ant-value 11 --rx-mode rx0 --sim-slot 0 --network-mask LTE_ONLY
+python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Avenger_0914.xqcn --rat LTE --tx tx1 --ant-value 11 --rx-mode rx0 --sim-slot 0 --network-mask LTE_ONLY
 ```
 
 #### B. 5G NR 场景：NV 覆盖、5G网络锁定、TX 强迫、XQCN 恢复 (自动跳过 LTE RX 配置)
 ```bash
-python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Avenger_0914.xqcn --rat NR --ant-value 00 --sim-slot 0 --network-mask NR_ONLY
+python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Avenger_0914.xqcn --rat NR --tx tx0 --ant-value 00 --sim-slot 0 --network-mask NR_ONLY
 ```
 
 ---
@@ -73,15 +74,17 @@ python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Ave
 
 ```python
 import sys
-from qc_main import validate_params, run_qc_orchestration_flow
+from qc_main import validate_params, run_qc_flow
 
 # 1. 准备您的测试字典类参数
 qc_test_config = {
     "serial": "NAVR120201",
     "qcn_file": r"D:\xqcn\Avenger_0914.xqcn",
     "rat": "LTE",
+    "tx": "tx1",
     "ant_value": "11",
     "rx_mode": "rx0",
+    "network_mask": "LTE_ONLY",
     "sim_slot": 0,
 }
 
@@ -91,7 +94,7 @@ try:
     validate_params(qc_test_config)
     
     print("[*] 校验通过！正在拉起高通 5 步自动化测试编排流程...")
-    success = run_qc_orchestration_flow(qc_test_config)
+    success = run_qc_flow(qc_test_config)
     
     if success:
         print("[+] 恭喜，高通平台测试流程连贯完成！")
@@ -113,6 +116,11 @@ except Exception as e:
 * **`qc_main.py`**：高通核心编排调度器，负责参数清洗、整包强校检和跨脚本连贯控制。
 * **`qc_restore_xqcn.py`**：调用 QUTS DeviceConfigService 专属还原 `.xqcn` / `.qcn` 数据并监控进度。
 * **`qc_nv.py`**：控制 NV 73841 (覆盖模式开关) 与 NV 73971 (ASDiv bands master) 的高精度读写与格式化。
+  * **支持新增 `--tx` 参数**：
+    * `tx0` $\rightarrow$ NV 73841 = `0` (0x00，测 TX0)
+    * `tx1` $\rightarrow$ NV 73841 = `17` (0x11，测 TX1)
+    * `tx2` $\rightarrow$ NV 73841 = `34` (0x22，测 TX2)
+    * `tx3` $\rightarrow$ NV 73841 = `51` (0x33，测 TX3)
 * **`qc_efs_tx.py`**：调用 QUTS QXDM 诊断服务向 EFS 物理节点快速打入天线 Config 强迫参数并离线再在线激活。
 * **`qc_lte_rx.py`**：专门在 4G 下负责读取、清空 `/nv/item_files/modem/lte/ML1` 目录，上传对应的 `rx_select` 分集接收配置。
 * **`android_network_manager.py`**：通用底层 ADB 网络屏蔽及切换控制器。

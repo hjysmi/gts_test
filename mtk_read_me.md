@@ -60,7 +60,7 @@
 #### A. LTE FDD 黄金频段 3 强迫发射与分集测试
 *发射和接收天线均强制设定为状态 `1`，选择端口 `0`，网络锁定 4G，SIM卡1*
 ```bash
-python mtk_main.py --rat LTE --band 3 --tx-state 1 --ttps-port 0 --sim-slot 0 --network-mask LTE_ONLY --rx-scenario Combine
+python mtk_main.py --rat LTE --band 1 --tx-state 0 --ttps-port 1 --sim-slot 0 --network-mask LTE_ONLY --rx-scenario Rx0
 ```
 
 #### B. LTE TDD 频段 41 强迫发射与分集测试
