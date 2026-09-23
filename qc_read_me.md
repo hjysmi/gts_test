@@ -27,8 +27,7 @@
 | `--serial` | `"serial"` | `str` | **是** | *非空字符串* | **目标 ADB 序列号**。<br>• 匹配手机的 adb 序列号（如 `N2FM220209`）以供 QUTS 与 ADB 精准下发控制。 |
 | `--qcn-file` | `"qcn_file"` | `str` | **是** | *合法的文件路径* | **QCN/XQCN 备份文件的完整绝对路径**。<br>• 强校验：如果文件不存在或不是合法绝对路径，将立刻安全拦截。 |
 | `--rat` | `"rat"` | `str` | **是** | `LTE`, `LTE_ONLY`, `NR`, `NR_ONLY` | **测试目标通信制式**。<br>• `LTE` / `LTE_ONLY` 代表 4G 模式。<br>• `NR` / `NR_ONLY` 代表 5G 模式。 |
-| `--tx` | `"tx"` | `str` | **是** | `tx0`, `tx1`, `tx2`, `tx3` | **发射天线测试目标 (NV 73841)**。<br>• `tx0`: 测 TX0，写入 NV 73841 = `0` (0x00)<br>• `tx1`: 测 TX1，写入 NV 73841 = `17` (0x11)<br>• `tx2`: 测 TX2，写入 NV 73841 = `34` (0x22)<br>• `tx3`: 测 TX3，写入 NV 73841 = `51` (0x33) |
-| `--ant-value` | `"ant_value"` | `str` | **是** | `0`, `00`, `1`, `11`, `2`, `22`, `3`, `33`, `default`, `FF` | **ASDiv 天线强迫值**（物理发射天线设定）。<br>• `00` / `0`: 强迫 Config0 (ANT1)<br>• `11` / `1`: 强迫 Config1 (ANT2)<br>• `22` / `2`: 强迫 Config2 (ANT3)<br>• `33` / `3`: 强迫 Config3 (ANT4)<br>• `FF` / `default`: 恢复默认自动切换。 |
+| `--tx` | `"tx"` | `str` | **是** | `tx0`, `tx1`, `tx2`, `tx3`, `0`, `1`, `2`, `3` | **发射天线测试目标（同时自动联动 NV 73841 与 ASDiv EFS 节点配置）**。<br>• `tx0` / `0`: NV 73841 = `0` (0x00)，ASDiv 写入 `00`<br>• `tx1` / `1`: NV 73841 = `17` (0x11)，ASDiv 写入 `11`<br>• `tx2` / `2`: NV 73841 = `34` (0x22)，ASDiv 写入 `22`<br>• `tx3` / `3`: NV 73841 = `51` (0x33)，ASDiv 写入 `33` |
 | `--rx-mode` | `"rx_mode"` | `str` | *条件* | `combine`, `rx0`, `rx1`, `rx2`, `rx3` | **LTE RX 路径强迫配置模式**。<br>• **LTE** 下：**必填**参数。<br>• **NR** 下：**自动忽略并跳过**该步骤。 |
 | `--network-mask`| `"network_mask"`| `str` | **是** | `LTE_ONLY`, `NR_ONLY`, `NR_LTE`, `DEFAULT` | **测试目标网络掩码**。<br>• **必填**参数。指定切换后的网络屏蔽状态。<br>• 校验规则：必须匹配 `android_network_manager.py` 底层定义的网络类型。 |
 | `--sim-slot` | `"sim_slot"` | `int` | *否* | `0`, `1` | **SIM 卡槽**（默认为 `0`）。<br>• `0` 代表卡 1，`1` 代表卡 2。 |
@@ -46,7 +45,7 @@
    * **LTE / LTE_ONLY** 模式下：程序硬性限制**必须传入** `rx_mode` 参数。若遗漏将抛出错误。
    * **NR / NR_ONLY** 模式下：程序将**自动在步骤 5 中输出 log 并静默跳过**对 `qc_lte_rx.py` 的调用（即使在命令行中传入了 `rx_mode` 也会安全忽略，保障 5G 下不执行 LTE RX 的无用强迫）。
 3. **接口取值域验证**:
-   * 严格核对 `ant_value` 与 `rx_mode` 属于高通物理对应合法的指令集中。
+   * 严格核对 `tx` 与 `rx_mode` 属于高通物理对应合法的指令集中。
 
 ---
 
@@ -58,12 +57,12 @@
 
 #### A. 4G LTE 场景：NV 覆盖、4G网络锁定、TX 强迫、RX0 强迫、XQCN 恢复
 ```bash
-python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Avenger_0914.xqcn --rat LTE --tx tx1 --ant-value 11 --rx-mode rx0 --sim-slot 0 --network-mask LTE_ONLY
+python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Avenger_0914.xqcn --rat LTE --tx tx1 --rx-mode rx0 --sim-slot 0 --network-mask LTE_ONLY
 ```
 
 #### B. 5G NR 场景：NV 覆盖、5G网络锁定、TX 强迫、XQCN 恢复 (自动跳过 LTE RX 配置)
 ```bash
-python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Avenger_0914.xqcn --rat NR --tx tx0 --ant-value 00 --sim-slot 0 --network-mask NR_ONLY
+python qc_main.py --serial NAVR120201 --qcn-file D:\share_179\0519\bank_prod\Avenger_0914.xqcn --rat NR --tx tx0 --sim-slot 0 --network-mask NR_ONLY
 ```
 
 ---
@@ -82,7 +81,6 @@ qc_test_config = {
     "qcn_file": r"D:\xqcn\Avenger_0914.xqcn",
     "rat": "LTE",
     "tx": "tx1",
-    "ant_value": "11",
     "rx_mode": "rx0",
     "network_mask": "LTE_ONLY",
     "sim_slot": 0,

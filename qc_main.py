@@ -18,9 +18,20 @@ import android_network_manager
 
 # Allowed values for validation
 ALLOWED_RATS = ["LTE", "LTE_ONLY", "NR", "NR_ONLY"]
-ALLOWED_TX_VALUES = ["tx0", "tx1", "tx2", "tx3"]
-ALLOWED_ANT_VALUES = ["0", "00", "1", "11", "2", "22", "3", "33", "default", "FF"]
+ALLOWED_TX_VALUES = ["tx0", "tx1", "tx2", "tx3", "0", "1", "2", "3"]
 ALLOWED_RX_MODES = ["combine", "rx0", "rx1", "rx2", "rx3"]
+
+# Mapping from TX target to ASDiv config antenna override value (EFS node)
+TX_TO_ANT_VALUE_MAP = {
+    "tx0": "00",
+    "0": "00",
+    "tx1": "11",
+    "1": "11",
+    "tx2": "22",
+    "2": "22",
+    "tx3": "33",
+    "3": "33"
+}
 
 def validate_params(params):
     """
@@ -30,7 +41,7 @@ def validate_params(params):
     if not isinstance(params, dict):
         raise ValueError("Parameters must be passed as a dictionary class.")
         
-    required_keys = ["serial", "qcn_file", "rat", "tx", "ant_value", "network_mask"]
+    required_keys = ["serial", "qcn_file", "rat", "tx", "network_mask"]
     for key in required_keys:
         if key not in params:
             raise ValueError(f"Missing required parameter key: '{key}'")
@@ -55,15 +66,16 @@ def validate_params(params):
     if rat not in ALLOWED_RATS:
         raise ValueError(f"Invalid RAT: '{params['rat']}'. Must be one of: {ALLOWED_RATS}")
         
-    # 4. Validate TX parameter
-    tx = str(params["tx"]).lower()
-    if tx not in ALLOWED_TX_VALUES:
+    # 4. Validate TX parameter and derive ASDiv ant_value
+    tx_raw = str(params["tx"]).lower()
+    if tx_raw not in ALLOWED_TX_VALUES:
         raise ValueError(f"Invalid 'tx': '{params['tx']}'. Must be one of: {ALLOWED_TX_VALUES}")
-        
-    # 5. Validate ANT value
-    ant_value = str(params["ant_value"]).lower()
-    if ant_value not in ALLOWED_ANT_VALUES:
-        raise ValueError(f"Invalid 'ant_value': '{params['ant_value']}'. Must be one of: {ALLOWED_ANT_VALUES}")
+    tx_normalized = tx_raw if tx_raw.startswith("tx") else f"tx{tx_raw}"
+    params["tx"] = tx_normalized
+    
+    # Automatically map tx to ant_value for Step 3 ASDiv EFS configuration
+    if "ant_value" not in params or not params["ant_value"]:
+        params["ant_value"] = TX_TO_ANT_VALUE_MAP[tx_raw]
         
     # 6. Validate RX mode
     if rat in ["LTE", "LTE_ONLY"]:
@@ -177,10 +189,8 @@ def main():
     parser.add_argument("--qcn-file", required=True, help="Absolute full path to the backup .qcn / .xqcn file")
     parser.add_argument("--rat", required=True, choices=["LTE", "LTE_ONLY", "NR", "NR_ONLY"], 
                         help="Target network tech: LTE or NR", type=str.upper)
-    parser.add_argument("--tx", required=True, choices=["tx0", "tx1", "tx2", "tx3"], 
-                        help="TX antenna target: tx0 (0), tx1 (17), tx2 (34), tx3 (51)", type=str.lower)
-    parser.add_argument("--ant-value", required=True, choices=["0", "00", "1", "11", "2", "22", "3", "33", "default", "FF"], 
-                        help="ASDiv TX antenna override target selection")
+    parser.add_argument("--tx", required=True, choices=["tx0", "tx1", "tx2", "tx3", "0", "1", "2", "3"], 
+                        help="TX antenna target: tx0/0 (NV=0, ASDiv=00), tx1/1 (NV=17, ASDiv=11), tx2/2 (NV=34, ASDiv=22), tx3/3 (NV=51, ASDiv=33)", type=str.lower)
     parser.add_argument("--rx-mode", choices=["combine", "rx0", "rx1", "rx2", "rx3"], 
                         help="LTE RX path override mode. Required if RAT is LTE.", type=str.lower)
     parser.add_argument("--sim-slot", type=int, choices=[0, 1], default=0, 
@@ -196,7 +206,6 @@ def main():
         "qcn_file": args.qcn_file,
         "rat": args.rat,
         "tx": args.tx,
-        "ant_value": args.ant_value,
         "sim_slot": args.sim_slot,
         "network_mask": args.network_mask
     }
