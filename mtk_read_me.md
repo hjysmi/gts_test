@@ -31,7 +31,7 @@
 | `--ttps-port` | `"ttps_port"` | `int` | **是** | `0`, `1` | **TTPS TX 物理端口**。<br>• 选择射频发射的主通道/副通道端口。 |
 | `--sim-slot` | `"sim_slot"` | `int` | **是** | `0`, `1` | **SIM 卡槽**。<br>• `0` 代表卡 1 (SIM 1)，`1` 代表卡 2 (SIM 2)。 |
 | `--network-mask`| `"network_mask"`| `str` | **是** | `LTE_ONLY`, `NR_ONLY`, `NR_LTE`, `DEFAULT` | **Android 允许的网络制式掩码**。<br>• `LTE_ONLY`: 仅限 4G<br>• `NR_ONLY`: 仅限 5G<br>• `NR_LTE`: 5G/4G 自动（禁用 2G/3G）<br>• `DEFAULT`: 恢复默认全自动。 |
-| `--rx-scenario` | `"rx_scenario"` | `str` | **单/多选** | `Combine`, `Rx0`, `Rx1`, `Rx2`, `Rx3` | **RX 天线测试测试场景名称**。<br>• `Combine`: Combine (全勾选模式)<br>• `Rx0`: Rx0 强迫单通测试<br>• `Rx1`: Rx1 强迫单通测试<br>• `Rx2`: Rx2 强迫双接收分集<br>• `Rx3`: Rx3 强迫分集测试 |
+| `--rx-scenario` | `"rx_scenario"` | `str` | **单/多选** | `Combine_4Rx`, `Combine_2Rx`, `Rx0`, `Rx1`, `Rx2`, `Rx3` | **RX 天线测试测试场景名称**。<br>• `Combine_4Rx`: Combine_4Rx (4Rx 全勾选模式)<br>• `Combine_2Rx`: Combine_2Rx (2Rx 全勾选模式，Rx12+Rx12+Rx12+Rx12)<br>• `Rx0`: Rx0 强迫单通测试<br>• `Rx1`: Rx1 强迫单通测试<br>• `Rx2`: Rx2 强迫双接收分集<br>• `Rx3`: Rx3 强迫分集测试 |
 
 ---
 

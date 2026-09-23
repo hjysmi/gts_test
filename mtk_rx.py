@@ -18,7 +18,7 @@ DEFAULT_LOG_FILE = "antenna_test_log.elg"
 # Test Scenarios definition based on docs/antenna_rx_test_at_commands.html
 SCENARIOS = {
     1: {
-        "name": "Combine (All checked)",
+        "name": "Combine_4Rx (All checked)",
         "4g": [
             'AT+EGMC=1,"rx_path",1,0,3,15,3,15',
             'AT+EGMC=1,"rx_path",1,0,3,15,3,15'
@@ -65,6 +65,16 @@ SCENARIOS = {
         ],
         "nr": [
             'AT+EGMC=1,"nr_rx_path",1,0,1,8,1,8,0'
+        ]
+    },
+    6: {
+        "name": "Combine_2Rx",
+        "4g": [
+            'AT+EGMC=1,"rx_path",1,0,3,3,3,3',
+            'AT+EGMC=1,"rx_path",1,0,3,3,3,3'
+        ],
+        "nr": [
+            'AT+EGMC=1,"nr_rx_path",1,0,3,3,3,3,0'
         ]
     }
 }
@@ -269,9 +279,9 @@ def main():
     parser.add_argument(
         "--scenario", 
         type=int, 
-        choices=[1, 2, 3, 4, 5], 
+        choices=[1, 2, 3, 4, 5, 6], 
         required=True, 
-        help="Scenario ID (1: Combine, 2: Rx0, 3: Rx1, 4: Rx2, 5: Rx3)"
+        help="Scenario ID (1: Combine_4Rx, 2: Rx0, 3: Rx1, 4: Rx2, 5: Rx3, 6: Combine_2Rx)"
     )
     parser.add_argument(
         "--network", 

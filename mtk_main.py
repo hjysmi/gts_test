@@ -12,7 +12,8 @@ LTE_TDD_BANDS = {34, 37, 38, 39, 40, 41, 42, 43, 46, 48}
 
 # Mapping RX scenario names to their original integer scenario IDs
 RX_SCENARIOS_MAP = {
-    "COMBINE": 1,
+    "COMBINE_4RX": 1,
+    "COMBINE_2RX": 6,
     "RX0": 2,
     "RX1": 3,
     "RX2": 4,
@@ -104,7 +105,7 @@ def validate_params(params):
     if rx_scenario not in RX_SCENARIOS_MAP:
         raise ValueError(f"Invalid 'rx_scenario': '{params['rx_scenario']}'. Must be one of "
                          f"{list(RX_SCENARIOS_MAP.keys())} or matching casing: "
-                         f"['Combine', 'Rx0', 'Rx1', 'Rx2', 'Rx3'].")
+                         f"['Combine_4Rx', 'Combine_2Rx', 'Rx0', 'Rx1', 'Rx2', 'Rx3'].")
 
     print("[+] Parameters validated successfully.")
     return True
@@ -224,8 +225,8 @@ def main():
                         choices=["LTE_ONLY", "NR_ONLY", "NR_LTE", "DEFAULT"], 
                         help="Network type mask from android_network_manager")
     parser.add_argument("--rx-scenario", required=True, 
-                        choices=["Combine", "Rx0", "Rx1", "Rx2", "Rx3"], 
-                        help="RX Scenario Name: Combine, Rx0, Rx1, Rx2, or Rx3")
+                        choices=["Combine_4Rx", "Combine_2Rx", "Rx0", "Rx1", "Rx2", "Rx3"], 
+                        help="RX Scenario Name: Combine_4Rx, Combine_2Rx, Rx0, Rx1, Rx2, or Rx3")
                         
     args = parser.parse_args()
     

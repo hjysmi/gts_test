@@ -243,7 +243,7 @@
 
             <!-- Scenario 1 -->
             <div class="card">
-                <h3>场景 1：测 Combine (全勾选)</h3>
+                <h3>场景 1：测 Combine_4Rx (4Rx全勾选)</h3>
                 <p><strong>勾选配置：</strong>所有 2RX (rx1+rx2)、4RX (rx1+rx2+rx3+rx4) 全选。<br>
                 <strong>计算出的掩码值：</strong><code>pCell2Rx = 3</code>, <code>pCell4Rx = 15</code>, <code>sCell2Rx = 3</code>, <code>sCell4Rx = 15</code></p>
                 
@@ -254,7 +254,24 @@
                 <p><span class="badge badge-nr">Antenna Test (NR)</span> 点击 Write 发送：</p>
                 <div class="code-block">AT+EGMC=1,"nr_rx_path",1,0,3,15,3,15,0</div>
                 <div class="explain-box">
-                    <strong>💡 特别说明：</strong>在 <strong>Combine</strong> 下，由于用户选择的掩码状态和 4G 复位初始化的状态刚好一致（都是全通路开启），所以 4G 第一步与第二步发送的命令在字面上完全一致。
+                    <strong>💡 特别说明：</strong>在 <strong>Combine_4Rx</strong> 下，由于用户选择的掩码状态和 4G 复位初始化的状态刚好一致（都是全通路开启），所以 4G 第一步与第二步发送的命令在字面上完全一致。
+                </div>
+            </div>
+
+            <!-- Scenario 6 -->
+            <div class="card">
+                <h3>场景 6：测 Combine_2Rx (2Rx全勾选)</h3>
+                <p><strong>勾选配置：</strong>所有 2RX (rx1+rx2)、4RX (rx1+rx2) 勾选，即切法为 Rx12+Rx12+Rx12+Rx12。<br>
+                <strong>计算出的掩码值：</strong><code>pCell2Rx = 3</code>, <code>pCell4Rx = 3</code>, <code>sCell2Rx = 3</code>, <code>sCell4Rx = 3</code></p>
+                
+                <p><span class="badge badge-4g">Antenna Test (4G)</span> 点击 Write 依次发送：</p>
+                <div class="code-block">1. 初始化（全开）：AT+EGMC=1,"rx_path",1,0,3,3,3,3
+2. 设置值（全开）：AT+EGMC=1,"rx_path",1,0,3,3,3,3</div>
+                
+                <p><span class="badge badge-nr">Antenna Test (NR)</span> 点击 Write 发送：</p>
+                <div class="code-block">AT+EGMC=1,"nr_rx_path",1,0,3,3,3,3,0</div>
+                <div class="explain-box">
+                    <strong>💡 特别说明：</strong>在 <strong>Combine_2Rx</strong> 下，四个参数均为 3 (即 1+2，对应 rx1+rx2)，用于双路接收场景。
                 </div>
             </div>
 
