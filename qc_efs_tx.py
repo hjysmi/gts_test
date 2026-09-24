@@ -45,10 +45,13 @@ VAL_MAP = {
     '00': '00',
     '1': '11',
     '11': '11',
+    '17': '11',
     '2': '22',
     '22': '22',
+    '34': '22',
     '3': '33',
     '33': '33',
+    '51': '33',
     'default': 'FF',
     'FF': 'FF'
 }
@@ -248,9 +251,9 @@ def main():
     parser = argparse.ArgumentParser(description="Qualcomm ASDiv Config Switching CLI Tool")
     parser.add_argument(
         'value', 
-        choices=['00', '11', '22', '33', 'FF', '0', '1', '2', '3', 'default'],
+        choices=['00', '11', '22', '33', 'FF', '0', '1', '2', '3', '17', '34', '51', 'default'],
         help="ASDiv path value to write. "
-             "Options: 00 (Config0/ANT1), 11 (Config1/ANT2), 22 (Config2/ANT3), 33 (Config3/ANT4), FF (Default)"
+             "Options: 00/0 (Config0/ANT1), 11/1/17 (Config1/ANT2), 22/2/34 (Config2/ANT3), 33/3/51 (Config3/ANT4), FF/default"
     )
     parser.add_argument(
         '--efs-path', 

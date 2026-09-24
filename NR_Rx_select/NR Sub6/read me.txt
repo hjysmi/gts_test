@@ -1,7 +1,0 @@
-
-
- 
-a. for single chain test, EFS file  with filename rfmgr_set_single_chain_rx  should be put into this folder:  /nv/item_files/modem/nr5g/ML1/
-b. for 2Rx/4Rx chain test, EFS file with filename num_rx_cfg should be put into this folder:  /nv/item_files/modem/nr5g/RRC/
-
--------if there is no such file ,please creat the file at efs explor.    

@@ -1,19 +1,19 @@
 # Qualcomm Antenna Force & RX Test End-to-End Orchestration Tool (qc_main.py)
 
-本工具专为 **Qualcomm (高通)** 平台手机在开发、射频调试（RF Test）或量产测试阶段设计，旨在通过 **Qualcomm QUTS (DeviceConfig & QXDM Service)** 与 **ADB 命令行**，全自动执行 XQCN 备份文件恢复、NV 项覆盖写入与校验、网络制式屏蔽变更、物理天线强制发射通路（ASDiv）设定以及分集接收（RX）路径选择的连贯测试编排。
+本工具专为 **Qualcomm (高通)** 平台手机在开发、射频调试（RF Test）或量产测试阶段设计，旨在通过 **Qualcomm QUTS (DeviceConfig & QXDM Service)** 与 **ADB 命令行**，全自动执行 USB 端口模式检查与自动配置、NV 项覆盖写入与校验（强制 TX 通路及 ASDiv Master 开关）、网络制式屏蔽变更、分集接收（RX）路径选择以及 XQCN 备份文件恢复的连贯测试编排。
 
 ---
 
-## 🚀 核心工作流 (5 大测试步骤)
+## 🚀 核心工作流 (4 大测试步骤)
 
-当运行 `qc_main.py` 时，脚本会安全且严格地按照以下顺序执行 5 步编排：
+当运行 `qc_main.py` 时，脚本会安全且严格地按照以下顺序执行编排：
 
 ```
-[开始] ──> 1. 覆盖写入并读取校验 NV 73841 和 NV 73971 (qc_nv.py)
+[开始] ──> 0. 检查 sys.usb.config (若非 diag 则自动进入 bootloader 切换 bootmode qcom 并重启)
+         └──> 1. 覆盖写入并读取校验 NV 73841 (TX通路) 和 NV 73971 (qc_nv.py)
          └──> 2. 基于 ADB 切换 Android 允许的网络类型 (LTE Only / NR Only) 
-         └──> 3. 强迫 TX 天线切换 / 写入 ASDiv (qc_efs_tx.py) 
-         └──> 4. 强迫 LTE RX 路径切换 (qc_lte_rx.py, 若在第2步选择5G NR则自动静默跳过此步) 
-         └──> 5. 还原 QCN/XQCN 备份文件 (qc_restore_xqcn.py, 移动至最后一步) ──> [结束]
+         └──> 3. 强迫 LTE RX 路径切换 (qc_lte_rx.py, 若在第2步选择5G NR则自动静默跳过此步) 
+         └──> 4. 还原 QCN/XQCN 备份文件 (qc_restore_xqcn.py) ──> [结束]
 ```
 
 ---
@@ -27,7 +27,7 @@
 | `--serial` | `"serial"` | `str` | **是** | *非空字符串* | **目标 ADB 序列号**。<br>• 匹配手机的 adb 序列号（如 `N2FM220209`）以供 QUTS 与 ADB 精准下发控制。 |
 | `--qcn-file` | `"qcn_file"` | `str` | **是** | *合法的文件路径* | **QCN/XQCN 备份文件的完整绝对路径**。<br>• 强校验：如果文件不存在或不是合法绝对路径，将立刻安全拦截。 |
 | `--rat` | `"rat"` | `str` | **是** | `LTE`, `LTE_ONLY`, `NR`, `NR_ONLY` | **测试目标通信制式**。<br>• `LTE` / `LTE_ONLY` 代表 4G 模式。<br>• `NR` / `NR_ONLY` 代表 5G 模式。 |
-| `--tx` | `"tx"` | `str` | **是** | `tx0`, `tx1`, `tx2`, `tx3`, `0`, `1`, `2`, `3` | **发射天线测试目标（同时自动联动 NV 73841 与 ASDiv EFS 节点配置）**。<br>• `tx0` / `0`: NV 73841 = `0` (0x00)，ASDiv 写入 `00`<br>• `tx1` / `1`: NV 73841 = `17` (0x11)，ASDiv 写入 `11`<br>• `tx2` / `2`: NV 73841 = `34` (0x22)，ASDiv 写入 `22`<br>• `tx3` / `3`: NV 73841 = `51` (0x33)，ASDiv 写入 `33` |
+| `--tx` | `"tx"` | `str` | **是** | `tx0`, `tx1`, `tx2`, `tx3`, `0`, `1`, `2`, `3` | **发射天线测试目标 (NV 73841)**。<br>• `tx0` / `0`: NV 73841 = `0` (0x00，测 TX0)<br>• `tx1` / `1`: NV 73841 = `17` (0x11，测 TX1)<br>• `tx2` / `2`: NV 73841 = `34` (0x22，测 TX2)<br>• `tx3` / `3`: NV 73841 = `51` (0x33，测 TX3) |
 | `--rx-mode` | `"rx_mode"` | `str` | *条件* | `combine_4rx`, `rx0`, `rx1`, `rx2`, `rx3` | **LTE RX 路径强迫配置模式**。<br>• **LTE** 下：**必填**参数。<br>• **NR** 下：**自动忽略并跳过**该步骤。 |
 | `--network-mask`| `"network_mask"`| `str` | **是** | `LTE_ONLY`, `NR_ONLY`, `NR_LTE`, `DEFAULT` | **测试目标网络掩码**。<br>• **必填**参数。指定切换后的网络屏蔽状态。<br>• 校验规则：必须匹配 `android_network_manager.py` 底层定义的网络类型。 |
 | `--sim-slot` | `"sim_slot"` | `int` | *否* | `0`, `1` | **SIM 卡槽**（默认为 `0`）。<br>• `0` 代表卡 1，`1` 代表卡 2。 |
@@ -91,7 +91,7 @@ try:
     print("[*] 正在对输入字典执行严格高通射频一致性校验...")
     validate_params(qc_test_config)
     
-    print("[*] 校验通过！正在拉起高通 5 步自动化测试编排流程...")
+    print("[*] 校验通过！正在拉起高通自动化测试编排流程...")
     success = run_qc_flow(qc_test_config)
     
     if success:
@@ -114,11 +114,11 @@ except Exception as e:
 * **`qc_main.py`**：高通核心编排调度器，负责参数清洗、整包强校检和跨脚本连贯控制。
 * **`qc_restore_xqcn.py`**：调用 QUTS DeviceConfigService 专属还原 `.xqcn` / `.qcn` 数据并监控进度。
 * **`qc_nv.py`**：控制 NV 73841 (覆盖模式开关) 与 NV 73971 (ASDiv bands master) 的高精度读写与格式化。
-  * **支持新增 `--tx` 参数**：
+  * **支持 `--tx` 参数**：
     * `tx0` $\rightarrow$ NV 73841 = `0` (0x00，测 TX0)
     * `tx1` $\rightarrow$ NV 73841 = `17` (0x11，测 TX1)
     * `tx2` $\rightarrow$ NV 73841 = `34` (0x22，测 TX2)
     * `tx3` $\rightarrow$ NV 73841 = `51` (0x33，测 TX3)
-* **`qc_efs_tx.py`**：调用 QUTS QXDM 诊断服务向 EFS 物理节点快速打入天线 Config 强迫参数并离线再在线激活。
 * **`qc_lte_rx.py`**：专门在 4G 下负责读取、清空 `/nv/item_files/modem/lte/ML1` 目录，上传对应的 `rx_select` 分集接收配置。
 * **`android_network_manager.py`**：通用底层 ADB 网络屏蔽及切换控制器。
+* **`qc_efs_tx.py`**：独立辅助脚本，调用 QUTS QXDM 诊断服务向 EFS 物理节点快速写入天线 Config 强迫参数并离线再在线激活。
