@@ -14,6 +14,7 @@ import sys
 import os
 import time
 import argparse
+import tempfile
 
 # Define Qualcomm QUTS Support Python Paths
 QUTS_PATHS = [
@@ -44,19 +45,13 @@ except ImportError as e:
 EFS_DIR = "/nv/item_files/modem/lte/ML1"
 EFS_FILE = "/nv/item_files/modem/lte/ML1/rx_select"
 
-# Local directories
-try:
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-    LOCAL_BASE_DIR = os.path.join(SCRIPT_DIR, "LTE_Rx_select")
-except NameError:
-    LOCAL_BASE_DIR = r"D:\share_179\0519\bank_prod\gts_test\LTE_Rx_select"
-
-# Mode to local folder mapping
-MODE_MAP = {
-    'rx0': 'PCC Rx0 only',
-    'rx1': 'PCC Rx1 only',
-    'rx2': 'PCC Rx2 only',
-    'rx3': 'PCC Rx3 only',
+# LTE Rx selection mode to byte value mapping (Bitmask defined by Qualcomm 80-N5220-2)
+# Bit 0: Rx0 (0x01), Bit 1: Rx1 (0x02), Bit 2: Rx2 (0x04), Bit 3: Rx3 (0x08)
+RX_MODE_BYTES_MAP = {
+    'rx0': b'\x01',
+    'rx1': b'\x02',
+    'rx2': b'\x04',
+    'rx3': b'\x08',
 }
 
 
@@ -277,13 +272,29 @@ def switch_lte_rx(mode, client_name="LteRxSwitchTool"):
         if not clear_efs_directory(dc, EFS_DIR):
             return False
 
-        # 7. 如果不是 combine_4rx 模式，上传选定的 rx_select 配置文件
+        # 7. 如果不是 combine_4rx 模式，根据 mode 动态生成临时 rx_select 配置文件并上传
         if mode != 'combine_4rx':
-            folder_name = MODE_MAP[mode]
-            local_file_path = os.path.join(LOCAL_BASE_DIR, folder_name, "rx_select")
-            if not upload_local_file_to_efs(dc, local_file_path, EFS_FILE):
+            rx_bytes = RX_MODE_BYTES_MAP.get(mode)
+            if not rx_bytes:
+                print(f"[ERROR] No byte value defined for mode: {mode}")
                 return False
-            print(f"[SUCCESS] Successfully completed EFS file writing for mode: {mode}")
+
+            temp_file_path = os.path.join(tempfile.gettempdir(), f"rx_select_{mode}_{os.getpid()}")
+            try:
+                print(f"[*] Generating temporary rx_select file: {temp_file_path} (byte: 0x{rx_bytes.hex()})")
+                with open(temp_file_path, "wb") as f:
+                    f.write(rx_bytes)
+
+                if not upload_local_file_to_efs(dc, temp_file_path, EFS_FILE):
+                    return False
+                print(f"[SUCCESS] Successfully completed EFS file writing for mode: {mode}")
+            finally:
+                if os.path.exists(temp_file_path):
+                    try:
+                        os.remove(temp_file_path)
+                        print(f"[*] Deleted temporary rx_select file: {temp_file_path}")
+                    except Exception as e_del:
+                        print(f"[WARNING] Failed to delete temporary file {temp_file_path}: {e_del}")
         else:
             print(f"[SUCCESS] Mode is 'combine_4rx'. Target EFS directory {EFS_DIR} cleared (empty config).")
 
@@ -315,7 +326,7 @@ def main():
     r"""
     命令行运行主入口。
     python .\qc_lte_rx.py combine_4rx 该命令执行时，会在日志中显示发现的所有文件（例如 dc_offsets, hpue_ulca_enable 等等），并将它们逐一清空，使 ML1 彻底变为空白目录。
-    python .\qc_lte_rx.py rx0 执行该命令时，会首先清空 ML1 下的所有文件，然后自动把你本地 D:\share_179\0519\bank_prod\gts_test\LTE_Rx_select\PCC Rx0 only\rx_select 文件写入到该目录下，并刷新 Modem。
+    python .\qc_lte_rx.py rx0 执行该命令时，会首先清空 ML1 下的所有文件，然后根据选择的模式动态生成临时 rx_select 配置文件写入到该目录下，写入成功后自动清理临时文件，并刷新 Modem。
     """
     parser = argparse.ArgumentParser(description="Qualcomm LTE Rx Path Selection Automation Tool")
     parser.add_argument(
