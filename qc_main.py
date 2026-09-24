@@ -16,9 +16,20 @@ import qc_lte_rx
 import android_network_manager
 
 # Allowed values for validation
-ALLOWED_RATS = ["LTE", "LTE_ONLY", "NR", "NR_ONLY"]
+ALLOWED_RATS = ["LTE", "LTE_ONLY", "NR_SA", "NR_ONLY", "NR", "NR_NSA", "NR_LTE"]
 ALLOWED_TX_VALUES = ["tx0", "tx1", "tx2", "tx3", "0", "1", "2", "3"]
 ALLOWED_RX_MODES = ["combine_4rx", "rx0", "rx1", "rx2", "rx3"]
+
+# Mapping from RAT selection to canonical RAT type and Android network mask
+RAT_CONFIG_MAP = {
+    "LTE": {"rat": "LTE", "mask": "LTE_ONLY"},
+    "LTE_ONLY": {"rat": "LTE", "mask": "LTE_ONLY"},
+    "NR_SA": {"rat": "NR_SA", "mask": "NR_ONLY"},
+    "NR_ONLY": {"rat": "NR_SA", "mask": "NR_ONLY"},
+    "NR": {"rat": "NR_SA", "mask": "NR_ONLY"},
+    "NR_NSA": {"rat": "NR_NSA", "mask": "NR_LTE"},
+    "NR_LTE": {"rat": "NR_NSA", "mask": "NR_LTE"},
+}
 
 def validate_params(params):
     """
@@ -28,7 +39,7 @@ def validate_params(params):
     if not isinstance(params, dict):
         raise ValueError("Parameters must be passed as a dictionary class.")
         
-    required_keys = ["serial", "qcn_file", "rat", "tx", "network_mask"]
+    required_keys = ["serial", "qcn_file", "rat", "tx"]
     for key in required_keys:
         if key not in params:
             raise ValueError(f"Missing required parameter key: '{key}'")
@@ -48,10 +59,37 @@ def validate_params(params):
     if not os.path.exists(qcn_file):
         raise ValueError(f"QCN file path '{qcn_file}' does not exist. Please specify a valid full path.")
         
-    # 3. Validate RAT
-    rat = params["rat"].upper() if isinstance(params["rat"], str) else ""
-    if rat not in ALLOWED_RATS:
+    # 3. Validate RAT and derive network_mask
+    rat_raw = params["rat"].upper() if isinstance(params["rat"], str) else ""
+    if rat_raw not in ALLOWED_RATS:
         raise ValueError(f"Invalid RAT: '{params['rat']}'. Must be one of: {ALLOWED_RATS}")
+        
+    config = RAT_CONFIG_MAP[rat_raw]
+    canonical_rat = config["rat"]
+    derived_mask = config["mask"]
+    params["rat"] = canonical_rat
+
+    # Parameter conflict validation for network_mask (if explicitly passed in dict)
+    if "network_mask" in params and params["network_mask"]:
+        user_mask = params["network_mask"].upper()
+        try:
+            android_network_manager.NetworkMask[user_mask]
+        except KeyError:
+            raise ValueError(f"Invalid 'network_mask': '{user_mask}'. Must be one of: "
+                             f"{[m.name for m in android_network_manager.NetworkMask]}")
+        # Conflict checks
+        if canonical_rat == "LTE" and user_mask != "LTE_ONLY":
+            raise ValueError(f"Parameter conflict: RAT '{rat_raw}' (LTE) is incompatible with "
+                             f"network_mask '{user_mask}'. Expected 'LTE_ONLY'.")
+        elif canonical_rat == "NR_SA" and user_mask != "NR_ONLY":
+            raise ValueError(f"Parameter conflict: RAT '{rat_raw}' (5G SA) is incompatible with "
+                             f"network_mask '{user_mask}'. Expected 'NR_ONLY'.")
+        elif canonical_rat == "NR_NSA" and user_mask not in ["NR_LTE", "DEFAULT"]:
+            raise ValueError(f"Parameter conflict: RAT '{rat_raw}' (5G NSA) is incompatible with "
+                             f"network_mask '{user_mask}'. NSA requires 'NR_LTE' or 'DEFAULT'.")
+        params["network_mask"] = user_mask
+    else:
+        params["network_mask"] = derived_mask
         
     # 4. Validate TX parameter
     tx_raw = str(params["tx"]).lower()
@@ -60,26 +98,21 @@ def validate_params(params):
     tx_normalized = tx_raw if tx_raw.startswith("tx") else f"tx{tx_raw}"
     params["tx"] = tx_normalized
         
-    # 6. Validate RX mode
-    if rat in ["LTE", "LTE_ONLY"]:
-        if "rx_mode" not in params:
+    # 5. Validate RX mode
+    if canonical_rat == "LTE":
+        if "rx_mode" not in params or not params["rx_mode"]:
             raise ValueError("Parameter 'rx_mode' is required when RAT is LTE.")
         rx_mode = params["rx_mode"].lower() if isinstance(params["rx_mode"], str) else ""
         if rx_mode not in ALLOWED_RX_MODES:
             raise ValueError(f"Invalid 'rx_mode': '{params['rx_mode']}'. Must be one of: {ALLOWED_RX_MODES}")
+    else:
+        if "rx_mode" in params and params["rx_mode"]:
+            print(f"[INFO] Target network mode is 5G ({canonical_rat}). 'rx_mode'='{params['rx_mode']}' is not applicable and will be safely ignored.")
             
-    # 7. Validate SIM Slot
+    # 6. Validate SIM Slot
     sim_slot = params.get("sim_slot", 0)
     if sim_slot not in (0, 1):
         raise ValueError(f"Invalid 'sim_slot': {sim_slot}. Must be 0 or 1.")
-        
-    # 8. Validate Network Mask
-    mask_str = params["network_mask"].upper() if isinstance(params["network_mask"], str) else ""
-    try:
-        android_network_manager.NetworkMask[mask_str]
-    except KeyError:
-        raise ValueError(f"Invalid 'network_mask': '{params['network_mask']}'. Must be one of: "
-                         f"{[m.name for m in android_network_manager.NetworkMask]}")
         
     print("[+] Parameters validated successfully for Qualcomm flow.")
     return True
@@ -306,8 +339,8 @@ def run_qc_flow(params):
         
     # Step 3: Switch LTE RX Path via qc_lte_rx
     print("\n--- Step 3: Configuring LTE RX Paths ---")
-    if rat in ["NR", "NR_ONLY"]:
-        print("[INFO] Target network mode is NR (5G). SKIPPING Step 3 (LTE RX selection).")
+    if rat in ["NR", "NR_ONLY", "NR_SA", "NR_NSA", "NR_LTE"]:
+        print(f"[INFO] Target network mode is 5G ({rat}). SKIPPING Step 3 (LTE RX selection).")
     else:
         rx_mode = params["rx_mode"].lower()
         print(f"[*] Setting LTE Rx selection to mode: '{rx_mode}'")
@@ -331,16 +364,16 @@ def main():
     parser = argparse.ArgumentParser(description="Qualcomm End-to-End Antenna Orchestration Script")
     parser.add_argument("--serial", required=True, help="Target device ADB serial number")
     parser.add_argument("--qcn-file", required=True, help="Absolute full path to the backup .qcn / .xqcn file")
-    parser.add_argument("--rat", required=True, choices=["LTE", "LTE_ONLY", "NR", "NR_ONLY"], 
-                        help="Target network tech: LTE or NR", type=str.upper)
+    parser.add_argument("--rat", required=True, 
+                        choices=["LTE", "LTE_ONLY", "NR_SA", "NR_ONLY", "NR", "NR_NSA", "NR_LTE"], 
+                        help="Target RAT & network mode: LTE/LTE_ONLY (4G), NR_SA/NR_ONLY/NR (5G SA), NR_NSA/NR_LTE (5G NSA)", 
+                        type=str.upper)
     parser.add_argument("--tx", required=True, choices=["tx0", "tx1", "tx2", "tx3", "0", "1", "2", "3"], 
                         help="TX antenna target: tx0/0 (NV=0), tx1/1 (NV=17), tx2/2 (NV=34), tx3/3 (NV=51)", type=str.lower)
     parser.add_argument("--rx-mode", choices=["combine_4rx", "rx0", "rx1", "rx2", "rx3"], 
                         help="LTE RX path override mode. Required if RAT is LTE.", type=str.lower)
     parser.add_argument("--sim-slot", type=int, choices=[0, 1], default=0, 
                         help="SIM card slot: 0 for SIM1 (default), 1 for SIM2")
-    parser.add_argument("--network-mask", required=True, choices=["LTE_ONLY", "NR_ONLY", "NR_LTE", "DEFAULT"], 
-                        help="Network type mask from android_network_manager", type=str.upper)
                         
     args = parser.parse_args()
     
@@ -351,7 +384,6 @@ def main():
         "rat": args.rat,
         "tx": args.tx,
         "sim_slot": args.sim_slot,
-        "network_mask": args.network_mask
     }
     if args.rx_mode is not None:
         params["rx_mode"] = args.rx_mode
