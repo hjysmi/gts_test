@@ -171,7 +171,8 @@ def run_mtk_flow(params):
     5. Set allowed network type via AdbDevice.
     6. Perform TX antenna switching via MtkModemSession.
     7. Perform RX antenna diversity testing via MtkModemSession.
-    8. Stop MTK logger.
+    8. Save modem diagnostic logs to disk (.elg) via MtkModemSession.
+    9. Stop MTK logger via AdbDevice.
     """
     print("\n" + "="*70)
     print("STARTING MTK ANTENNA TESTING ORCHESTRATION FLOW")
@@ -233,13 +234,23 @@ def run_mtk_flow(params):
                 print(f"[ERROR] {err_msg}")
                 return FlowResult(False, err_msg)
 
+            # Step 7: Save modem logs
+            print("\n--- Step 7: Saving MTK Modem Diagnostic Logs ---")
+            out_dir = params.get("out_dir", ".")
+            log_file = params.get("log_file", "antenna_test_log.elg")
+            res_log = modem.save_logs(out_dir=out_dir, log_file=log_file)
+            if not res_log:
+                err_msg = f"Step 7: 保存调制解调器诊断日志失败: {res_log.error_message}"
+                print(f"[ERROR] {err_msg}")
+                return FlowResult(False, err_msg)
+
     except Exception as e:
         err_msg = f"MACE 调制解调器会话异常: {e}"
         print(f"[ERROR] {err_msg}")
         return FlowResult(False, err_msg)
     finally:
-        # Step 7: Stop log
-        print("\n--- Step 7: Stopping MTK Logger ---")
+        # Step 8: Stop log
+        print("\n--- Step 8: Stopping MTK Logger ---")
         adb_dev.control_mtk_logger("stop")
     
     print("\n" + "="*70)
@@ -268,6 +279,8 @@ def main():
                         choices=["combine_4rx", "combine_2rx", "rx0", "rx1", "rx2", "rx3"], 
                         help="RX Mode: combine_4rx, combine_2rx, rx0, rx1, rx2, or rx3", 
                         type=str.lower)
+    parser.add_argument("--out-dir", default=".", help="Directory to save capture logs (default: .)")
+    parser.add_argument("--log-file", default="antenna_test_log.elg", help="Log filename (default: antenna_test_log.elg)")
                         
     args = parser.parse_args()
     
@@ -278,7 +291,9 @@ def main():
         "tx_state": args.tx_state,
         "ttps_port": args.ttps_port,
         "sim_slot": args.sim_slot,
-        "rx_mode": args.rx_mode
+        "rx_mode": args.rx_mode,
+        "out_dir": args.out_dir,
+        "log_file": args.log_file
     }
     if args.rx_state is not None:
         params["rx_state"] = args.rx_state

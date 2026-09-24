@@ -4,16 +4,16 @@
 
 ---
 
-## 🚀 核心工作流 (7 大测试步骤)
+## 🚀 核心工作流 (8 大测试步骤)
 
-当运行 `mtk_main.py` 时，脚本会安全且严格地按照以下顺序执行 7 步编排：
+当运行 `mtk_main.py` 时，脚本会安全且严格地按照以下顺序执行 8 步编排：
 
 ```
 [开始] ──> 1. 停止 MTK Logger ──> 2. 切换 Modem 为 USB 模式 ──> 3. 开启 MTK Logger 
          └──> [建立 MACE 连接] ──> 4. 切换 Android 网络类型 (LTE/NR/Default) 
-         └──> 5. 强迫 TX 天线切换 (mtk_tx.py, 无 Logger 控制干扰) 
-         └──> 6. 强迫 RX 天线分集切换 (mtk_rx_test.py, 无 Logger 控制干扰) 
-         └──> 7. 停止 MTK Logger ──> [结束并保存日志]
+         └──> 5. 强迫 TX 天线切换 
+         └──> 6. 强迫 RX 天线分集切换 
+         └──> 7. 持久化调制解调器诊断日志 (.elg) ──> 8. 停止 MTK Logger ──> [结束]
 ```
 
 ---
@@ -32,7 +32,45 @@
 | `--ttps-port` | `"ttps_port"` | `int` | **是** | `0`, `1` | **TTPS TX 物理端口**。<br>• 选择射频发射的主通道/副通道端口。 |
 | `--sim-slot` | `"sim_slot"` | `int` | **是** | `0`, `1` | **SIM 卡槽**。<br>• `0` 代表卡 1 (SIM 1)，`1` 代表卡 2 (SIM 2)。 |
 | `--rx-mode` | `"rx_mode"` | `str` | **是** | `combine_4rx`, `combine_2rx`,<br>`rx0`, `rx1`, `rx2`, `rx3` | **RX 接收天线测试模式**。<br>• `combine_4rx`: 4Rx 全勾选模式<br>• `combine_2rx`: 2Rx 全勾选模式 (Rx12+Rx12+Rx12+Rx12)<br>• `rx0`: Rx0 强迫单通测试<br>• `rx1`: Rx1 强迫单通测试<br>• `rx2`: Rx2 强迫双接收分集<br>• `rx3`: Rx3 强迫分集测试 |
+| `--out-dir` | `"out_dir"` | `str` | 否 | *有效目录路径* | **日志保存目录**（默认：`.` 当前运行目录）。 |
+| `--log-file` | `"log_file"` | `str` | 否 | *文件名*（如 `antenna_test_log.elg`） | **诊断日志文件名**（默认：`antenna_test_log.elg`）。 |
 | *(已合并)*<br>`--network-mask` | `"network_mask"` | `str` | *已移除* | `LTE_ONLY`, `NR_ONLY`, `NR_LTE`, `DEFAULT` | **已合并进 `--rat` 自动推导，CLI 命令行参数已移除**。<br>• 仅限 Python 字典调用时可选传入；若显式传入将自动校验其与 `rat` 是否冲突。 |
+
+### 参数解析详情
+
+`AT+EGMC=1,"lte_force_ttps",1,0,0,1` 的参数格式与内部结构体定义（对应 `el1_uac_tx_path_switch_req_struct`）映射如下：
+
+| 参数位置 | 参数值 | 对应字段 | 含义说明 |
+| :--- | :--- | :--- | :--- |
+| op | 1 | 操作模式 | 1 为 Set（配置）模式 |
+| config_str | "lte_force_ttps" | 配置名称 | LTE 强制 TTPS 设置 |
+| 参数 1 | 1 | mode | 开关控制：1 表示 Enable（开启），0 表示 Disable |
+| 参数 2 | 0 | tx_state | 期望的 Tx State（范围 0 ~ 31） |
+| 参数 3 | 0 | rx_state | 期望的 Rx State（范围 0 ~ 31） |
+| 参数 4 | 1 | tx_path / ttps_port | 期望强制生效的 TTPS 天线端口/发射路径（当前为 1） |
+| 参数 5 (可选) | (缺省) | band | 指定生效的频段（未填则默认对当前频段生效） |
+
+#### 核心对应关系：ttps_port 与 Tx Path
+
+在 MTK 基带的 TAS/UTAS（上行发射天线分集与切换）架构中，AT 指令中的 `ttps_port` 直接对应物理射频的 **Tx Path（发射路径）**：
+
+| 参数 / 配置 | 对应的 UTAS 发射路径 | Log 中对应的候选天线字段 |
+| :--- | :--- | :--- |
+| **`ttps_port = 0`** | **Tx Path 0** | `Utas TxCandidAnt Info Tx Path0` |
+| **`ttps_port = 1`** | **Tx Path 1** | `Utas TxCandidAnt Info Tx Path1` |
+
+```text
+                    ┌── 射频开关 ───► ANT2 (物理天线2)
+[Tx Path 0 链路] ───┤
+(ttps_port = 0)     └── 射频开关 ───► ANT9 (物理天线9)
+
+[Tx Path 1 链路] ───► 固定/独立通路 ─► ANT8 (物理天线8)
+(ttps_port = 1)
+```
+
+结合前面日志中的 `Utas TxCandidAnt Info`：
+* **Tx Path 0 (`ttps_port = 0`)**：硬件上连到了支持天线切换的射频多路开关，其候选天线池（Candidate Antennas）为 ANT2 和 ANT9。
+* **Tx Path 1 (`ttps_port = 1`)**：硬件上走的是另一组射频通路，其候选天线池仅有 ANT8。
 
 ---
 

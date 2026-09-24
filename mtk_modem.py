@@ -277,7 +277,7 @@ class MtkModemSession:
         full_path = os.path.abspath(os.path.join(out_dir, log_file))
         print(f"\n[*] 正在保存 MTK Modem 诊断日志到: {full_path}...")
         try:
-            self.device.save_log_file(full_path)
+            self.device.save(full_path)
             print(f"[+] 诊断日志保存成功: {full_path}")
             return FlowResult(True, "")
         except Exception as e:
