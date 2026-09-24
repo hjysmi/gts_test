@@ -138,7 +138,7 @@ except Exception as e:
 ## 📁 关联模块说明
 
 * **`mtk_main.py`**：核心流程调度器，负责外部交互、字典校验、全局顺序编排。
-* **`mtk_tx.py`**：封装有 `set_antenna_force`，接收由主脚本清洗后的无干扰纯净发射天线配置命令。
-* **`mtk_rx_test.py`**：封装有接收分集强迫核心 `run_antenna_rx_test`，支持静默控制 Logger 执行测试。
-* **`android_network_manager.py`**：基于 ADB 极速控制 Android 电话子系统底层允许的网络屏蔽掩码。
-* **`mtk_atc_md.py`**：用于通过 MACE SDK 进行基础连接与底层数据解析通讯。
+* **`mtk_modem.py`**：【深模块】联发科调制解调器底层驱动模块（`MtkModemSession` 上下文管理器），深度收敛 MACE 设备连接、AT_TX 队列订阅与响应解析、全制式 TX 强迫、RX 分集测试场景命令目录以及 ELG 调制解调器日志持久化。
+* **`adb_device.py`**：【深模块】统一 Android 设备控制层（`AdbDevice`），封装在线与授权守卫、网络制式掩码切换、MTK LoggerUI 广播控制（stop/start/switch_usb）。
+* **`mtk_tx.py`** / **`mtk_rx.py`** / **`mtk_atc_md.py`**：向后兼容的独立脚本，支持单步骤调试。
+* **`android_network_manager.py`**：底层网络类型掩码常量定义与通用辅助。

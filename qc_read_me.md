@@ -121,14 +121,13 @@ except Exception as e:
 
 ## 📁 关联子模块说明
 
-* **`qc_main.py`**：高通核心编排调度器，负责参数清洗、整包强校检和跨脚本连贯控制。
-* **`qc_restore_xqcn.py`**：调用 QUTS DeviceConfigService 专属还原 `.xqcn` / `.qcn` 数据并监控进度。
-* **`qc_nv.py`**：控制 NV 73841 (覆盖模式开关) 与 NV 73971 (ASDiv bands master) 的高精度读写与格式化。
+* **`qc_main.py`**：高通核心编排调度器，负责参数清洗、整包强校检和跨组件连贯控制。
+* **`qc_modem.py`**：【深模块】高通调制解调器底层驱动模块（`QualcommModemSession` 上下文管理器），提供单一持久 QUTS 会话、精准设备序列号句柄锁定、NV 73841/73971 读写、内存直接推流 LTE RX 分集 EFS 字节及 XQCN 恢复。
   * **支持 `--tx` 参数**：
     * `tx0` $\rightarrow$ NV 73841 = `0` (0x00，测 TX0)
     * `tx1` $\rightarrow$ NV 73841 = `17` (0x11，测 TX1)
     * `tx2` $\rightarrow$ NV 73841 = `34` (0x22，测 TX2)
     * `tx3` $\rightarrow$ NV 73841 = `51` (0x33，测 TX3)
-* **`qc_lte_rx.py`**：专门在 4G 下负责读取、清空 `/nv/item_files/modem/lte/ML1` 目录，上传对应的 `rx_select` 分集接收配置。
-* **`android_network_manager.py`**：通用底层 ADB 网络屏蔽及切换控制器。
-* **`qc_efs_tx.py`**：独立辅助脚本，调用 QUTS QXDM 诊断服务向 EFS 物理节点快速写入天线 Config 强迫参数并离线再在线激活。
+* **`adb_device.py`**：【深模块】统一 Android 设备控制层（`AdbDevice`），封装在线与授权守卫、网络制式掩码切换、Diag bootmode 自动重启自愈及广播投递。
+* **`qc_restore_xqcn.py`** / **`qc_nv.py`** / **`qc_lte_rx.py`**：向后兼容的独立脚本，支持单步骤调试。
+* **`android_network_manager.py`**：底层网络类型掩码常量定义与通用辅助。
