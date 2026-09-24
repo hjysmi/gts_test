@@ -48,10 +48,16 @@ except ImportError:
     pass
 
 try:
+    import thrift.compat
+    thrift.compat.str_to_binary = lambda s: s if isinstance(s, bytes) else bytes(s, 'utf8')
+except Exception:
+    pass
+
+try:
     import QutsClient
     import DeviceConfigService.DeviceConfigService as dc_service
     import DeviceConfigService.constants as dc_constants
-    from DeviceConfigService.ttypes import FileSystem
+    from DeviceConfigService.ttypes import FileSystem, NvReturns, NvReturnFlags
     try:
         import QXDMService.QxdmService as qxdm_service
         import QXDMService.constants as qxdm_constants
@@ -64,6 +70,8 @@ except ImportError as e:
     dc_service = None
     dc_constants = None
     FileSystem = None
+    NvReturns = None
+    NvReturnFlags = None
     qxdm_service = None
     qxdm_constants = None
 
@@ -71,6 +79,21 @@ if FileSystem is None:
     class _FallbackFS:
         FS_PRIMARY = 0
     FileSystem = _FallbackFS
+
+if NvReturnFlags is None:
+    class _FallbackNvReturnFlags:
+        BINARY_PAYLOAD = 1
+        PARSED_TEXT = 2
+        JSON_TEXT = 3
+        VALUE_LIST = 4
+    NvReturnFlags = _FallbackNvReturnFlags
+
+if NvReturns is None:
+    class _FallbackNvReturns:
+        def __init__(self, flags=0, fieldQueries=None):
+            self.flags = flags
+            self.fieldQueries = fieldQueries or []
+    NvReturns = _FallbackNvReturns
 
 
 # Standard NV Constants
@@ -268,14 +291,21 @@ class QualcommModemSession:
             return False, "DeviceConfigService 未就绪"
 
         print(f"[*] 查询 NV {nv_id} 当前值...")
-        res = self.dc_client.nvGetItem(str(nv_id), sub_id)
-        if res.errorCode == 0:
-            print(f"[+] NV {nv_id} 查询结果: {res.itemValue}")
-            return True, str(res.itemValue)
-        else:
-            err_detail = self.dc_client.getLastError()
-            print(f"[WARNING] NV {nv_id} 查询返回失败: {err_detail}")
-            return False, err_detail
+        try:
+            return_config = NvReturns(flags=NvReturnFlags.JSON_TEXT)
+            res = self.dc_client.nvReadItem(str(nv_id), sub_id, 0, return_config)
+            if res.errorCode == 0:
+                val = res.parsedJson if res.parsedJson is not None else (res.parsedText if res.parsedText is not None else str(res.payload or ""))
+                print(f"[+] NV {nv_id} 查询结果: {val}")
+                return True, str(val)
+            else:
+                err_detail = self.dc_client.getLastError() if hasattr(self.dc_client, 'getLastError') else f"Error code {res.errorCode}"
+                print(f"[WARNING] NV {nv_id} 查询返回失败: {err_detail}")
+                return False, str(err_detail)
+        except Exception as e:
+            err_msg = f"NV {nv_id} 查询异常: {e}"
+            print(f"[WARNING] {err_msg}")
+            return False, err_msg
 
     def set_antenna_tx(self, tx_target: str) -> FlowResult:
         """
@@ -365,7 +395,15 @@ class QualcommModemSession:
 
         return FlowResult(True, "")
 
-    def restore_xqcn(self, xqcn_path: str) -> FlowResult:
+    def restore_xqcn(
+        self,
+        xqcn_path: str,
+        spc: str = "000000",
+        allow_esn_mismatch: bool = True,
+        reset_upon_completion: bool = False,
+        reset_timeout_ms: int = 15000,
+        filter_xml: str = ""
+    ) -> FlowResult:
         """
         Restore QCN / XQCN calibration and NV backup via DeviceConfigService.
         """
@@ -376,13 +414,41 @@ class QualcommModemSession:
         if not os.path.exists(abs_path):
             return FlowResult(False, f"指定的备份文件不存在: '{abs_path}'")
 
-        print(f"\n[*] 正在通过 DeviceConfigService 恢复备份: {abs_path}...")
-        err_code = self.dc_client.restoreFromXqcn(abs_path)
+        print(f"\n[*] 正在加载并读取备份文件: {abs_path}...")
+        try:
+            with open(abs_path, 'rb') as f:
+                xqcn_data = f.read()
+        except Exception as e:
+            return FlowResult(False, f"读取 XQCN 备份文件失败: {e}")
+
+        print(f"[*] 正在通过 DeviceConfigService 恢复备份 (大小: {len(xqcn_data)} 字节)...")
+        print(f" - 允许 ESN/IMEI 错配: {allow_esn_mismatch}")
+        print(f" - QUTS 自动重启设备: {reset_upon_completion}")
+
+        try:
+            err_code = self.dc_client.restoreFromXqcn(
+                xqcn_data,
+                str(spc),
+                bool(allow_esn_mismatch),
+                bool(reset_upon_completion),
+                int(reset_timeout_ms),
+                str(filter_xml)
+            )
+        except Exception as e:
+            err_msg = f"DeviceConfigService restoreFromXqcn 调用异常: {e}"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
+
         if err_code == 0:
             print("[+] QCN/XQCN 恢复指令成功下发并写入完毕！")
             return FlowResult(True, "")
         else:
-            err_detail = self.dc_client.getLastError()
+            err_detail = self.dc_client.getLastError() if hasattr(self.dc_client, 'getLastError') else f"Error code {err_code}"
+            # 容错处理：若因 QUTS 等待设备重启超时，但数据实际已写入完毕且设备正在重启
+            if "Could not Restart Device within the timeout period" in str(err_detail):
+                print("[+] QCN/XQCN 数据已写入完毕，设备已安排重启 (已忽略 QUTS 端口重连超时提示)。")
+                return FlowResult(True, "")
+
             err_msg = f"QCN/XQCN 恢复失败 (code={err_code}): {err_detail}"
             print(f"[ERROR] {err_msg}")
             return FlowResult(False, err_msg)

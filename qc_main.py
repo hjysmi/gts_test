@@ -201,6 +201,10 @@ def run_qc_flow(params):
         print(f"[ERROR] {err_msg}")
         return FlowResult(False, err_msg)
 
+    # 重启设备使还原的 NV/XQCN 配置生效
+    print("\n[*] 正在重启设备使还原的 NV/XQCN 配置生效...")
+    adb_dev.reboot(wait_complete=False)
+
     print("\n" + "="*70)
     print("QUALCOMM ANTENNA TESTING ORCHESTRATION FLOW COMPLETE")
     print("="*70 + "\n")

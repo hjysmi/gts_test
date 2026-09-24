@@ -226,6 +226,22 @@ class AdbDevice:
         res = self.run_adb(["shell", "getprop", prop_name])
         return res.stdout.strip() if res.returncode == 0 else ""
 
+    def reboot(self, wait_complete: bool = False) -> FlowResult:
+        """
+        Reboot the Android device via ADB, optionally waiting for boot completion.
+        """
+        print(f"[*] 正在通过 ADB 重启设备 [{self.serial}]...")
+        res = self.run_adb(["reboot"])
+        if res.returncode != 0:
+            err_msg = f"执行 adb reboot 失败: {res.stderr.strip()}"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
+        print("[+] 重启指令已发送。")
+        if wait_complete:
+            time.sleep(5)
+            wait_for_adb_device(self.serial)
+        return FlowResult(True, "")
+
     def ensure_diag_mode(self) -> FlowResult:
         """
         Verify that sys.usb.config contains 'diag'.
