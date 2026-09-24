@@ -51,9 +51,10 @@ def control_mtk_logger(action, device_id=None):
     cmd = commands.get(action)
     if not cmd:
         print(f"[WARNING] Unknown MTK logger action: {action}")
-        return
+        return False
         
     print(f"[*] Executing MTK logger command for '{action}'...")
+    success = False
     try:
         # We run the command and wait for it. We don't raise an exception 
         # to prevent blocking the entire flow if ADB/device is not ready,
@@ -61,6 +62,7 @@ def control_mtk_logger(action, device_id=None):
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode == 0:
             print(f"[+] MTK logger '{action}' command succeeded.")
+            success = True
         else:
             print(f"[WARNING] MTK logger '{action}' command returned exit code {result.returncode}.")
             print(f"  Stdout: {result.stdout.strip()}")
@@ -72,6 +74,7 @@ def control_mtk_logger(action, device_id=None):
     # on the device before executing the next step.
     print(f"[*] Sleeping 5 seconds after '{action}'...")
     time.sleep(5)
+    return success
 
 
 

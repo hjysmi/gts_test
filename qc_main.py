@@ -31,6 +31,67 @@ RAT_CONFIG_MAP = {
     "NR_LTE": {"rat": "NR_NSA", "mask": "NR_LTE"},
 }
 
+class FlowResult(tuple):
+    """
+    Result representing (success: bool, error_message: str).
+    Evaluates to True if success is True, False otherwise.
+    """
+    def __new__(cls, success: bool, error_message: str = ""):
+        return super().__new__(cls, (bool(success), str(error_message)))
+
+    @property
+    def success(self) -> bool:
+        return self[0]
+
+    @property
+    def error_message(self) -> str:
+        return self[1]
+
+    def __bool__(self):
+        return self[0]
+
+    def __repr__(self):
+        return f"FlowResult(success={self[0]}, error_message={repr(self[1])})"
+
+def check_adb_device(target_serial: str) -> tuple:
+    """
+    Verify if target_serial is present in 'adb devices' and in normal 'device' state.
+    Returns (True, "") if valid, or (False, error_message) if mismatched/unavailable.
+    """
+    try:
+        res = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=False)
+        if res.returncode != 0:
+            return False, f"执行 'adb devices' 失败 (exit code {res.returncode}): {res.stderr.strip()}"
+            
+        lines = res.stdout.strip().splitlines()
+        device_map = {}
+        for line in lines[1:]:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                device_map[parts[0]] = parts[1]
+            elif len(parts) == 1:
+                device_map[parts[0]] = "unknown"
+                
+        if not device_map:
+            return False, "未检测到任何在线 ADB 设备。请检查 USB 数据线连接以及设备是否已开启开发者选项和 USB 调试。"
+            
+        if target_serial not in device_map:
+            available = list(device_map.keys())
+            return False, f"指定的设备序列号 '{target_serial}' 不在当前连接的 ADB 设备列表中！当前可用设备: {available}。请核对 --serial 参数。"
+            
+        status = device_map[target_serial]
+        if status != "device":
+            return False, f"目标设备 '{target_serial}' 状态异常 ({status})！若为 'unauthorized' 请在手机屏幕上确认允许 USB 调试；若为 'offline' 请重新插拔数据线。"
+            
+        return True, ""
+    except FileNotFoundError:
+        return False, "系统未找到 'adb' 命令，请确认 Android SDK Platform-Tools 已正确安装并配置到 PATH 环境变量中。"
+    except Exception as e:
+        return False, f"检查 ADB 设备列表时发生异常: {e}"
+
 def validate_params(params):
     """
     Validate the input configuration parameter dictionary.
@@ -44,10 +105,16 @@ def validate_params(params):
         if key not in params:
             raise ValueError(f"Missing required parameter key: '{key}'")
             
-    # 1. Validate serial
+    # 1. Validate serial and check presence in adb devices
     serial = params["serial"]
     if not isinstance(serial, str) or not serial.strip():
         raise ValueError("Parameter 'serial' (ADB serial number) must be a non-empty string.")
+    serial = serial.strip()
+    params["serial"] = serial
+    
+    adb_ok, adb_err = check_adb_device(serial)
+    if not adb_ok:
+        raise ValueError(f"ADB 设备检测失败: {adb_err}")
         
     # 2. Validate QCN File Path (must be absolute or full path and must exist)
     qcn_file = params["qcn_file"]
@@ -232,8 +299,9 @@ def run_qc_flow(params):
         # Validate parameters dictionary
         validate_params(params)
     except ValueError as e:
-        print(f"\n[PARAM ERROR] Parameter validation failed: {e}")
-        sys.exit(1)
+        err_msg = f"Parameter validation failed: {e}"
+        print(f"\n[PARAM ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
 
     serial = params["serial"]
     qcn_file = params["qcn_file"]
@@ -253,8 +321,9 @@ def run_qc_flow(params):
 
     if "diag" not in usb_config.lower():
         if params.get("_diag_reboot_attempted", False):
-            print(f"\n[ERROR] 设备已尝试切换 bootmode qcom 并重启，但 sys.usb.config 仍不包含 'diag' (当前值: '{usb_config}')。")
-            return False
+            err_msg = f"设备已尝试切换 bootmode qcom 并重启，但 sys.usb.config 仍不包含 'diag' (当前值: '{usb_config}')。"
+            print(f"\n[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
 
         print("[*] sys.usb.config 不包含 'diag'，即将重启进入 bootloader 切换至 qcom 模式...")
         params["_diag_reboot_attempted"] = True
@@ -271,10 +340,11 @@ def run_qc_flow(params):
         print("[*] 等待设备进入 bootloader 模式并执行 fastboot devices 检查...")
         fb_ok, fb_serial = wait_for_fastboot_device(serial, timeout=20)
         if not fb_ok:
+            err_msg = "fastboot devices 未识别到设备，请确认设备是否处于 bootloader 状态，并请先安装驱动！"
             print("\n" + "!"*70)
-            print("[ERROR] fastboot devices 未识别到设备，请先安装驱动！")
+            print(f"[ERROR] {err_msg}")
             print("!"*70 + "\n")
-            return False
+            return FlowResult(False, err_msg)
 
         print(f"[+] fastboot 成功识别到设备: {fb_serial}")
 
@@ -289,6 +359,10 @@ def run_qc_flow(params):
         out_cfg = ((res_cfg.stdout or "") + "\n" + (res_cfg.stderr or "")).strip()
         if out_cfg:
             print(f"  {out_cfg}")
+        if res_cfg.returncode != 0:
+            err_msg = f"fastboot oem config bootmode qcom 执行失败: {out_cfg}"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
 
         # 4. fastboot reboot
         fb_reboot_cmd = ["fastboot"]
@@ -300,12 +374,17 @@ def run_qc_flow(params):
         out_rb = ((res_rb.stdout or "") + "\n" + (res_rb.stderr or "")).strip()
         if out_rb:
             print(f"  {out_rb}")
+        if res_rb.returncode != 0:
+            err_msg = f"fastboot reboot 执行失败: {out_rb}"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
 
         # 5. 等待开机并重新连接 ADB
         print("[*] 等待设备重启并重新连接 ADB...")
         if not wait_for_adb_device(serial, timeout=120):
-            print("[ERROR] 等待设备重启超时，ADB 未重新连接！")
-            return False
+            err_msg = "等待设备重启超时，ADB 未重新连接！"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
 
         # 6. 再次调用 run_qc_flow 函数
         print("\n[*] 正在重新调用 run_qc_flow 函数...")
@@ -318,12 +397,21 @@ def run_qc_flow(params):
 
     # 1a. Modify NV 73971 (ASDiv bands master) to JSON constant
     print("[*] Setting NV 73971 (ASDiv bands master) to JSON constant...")
-    qc_nv.modify_nv_for_device(target_adb_serial=serial, nv_id="73971", nv_value=qc_nv.NV_73971_JSON)
+    ok_73971 = qc_nv.modify_nv_for_device(target_adb_serial=serial, nv_id="73971", nv_value=qc_nv.NV_73971_JSON)
+    if not ok_73971:
+        err_msg = "Step 1a: 写入 NV 73971 失败，请检查 QUTS 连接状态！"
+        print(f"[ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
+        
     qc_nv.query_nv_for_device(target_adb_serial=serial, nv_id="73971")
 
     # 1b. Modify NV 73841 according to selected tx
     print(f"[*] Setting NV 73841 according to TX target '{tx_val.upper()}'...")
-    qc_nv.set_antenna_tx(target_adb_serial=serial, tx=tx_val)
+    ok_73841 = qc_nv.set_antenna_tx(target_adb_serial=serial, tx=tx_val)
+    if not ok_73841:
+        err_msg = f"Step 1b: 写入 NV 73841 (TX={tx_val}) 失败！"
+        print(f"[ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
     
     # Step 2: Switch Network Type via android_network_manager
     print("\n--- Step 2: Setting Network Type Mask ---")
@@ -335,7 +423,9 @@ def run_qc_flow(params):
         device_id=serial
     )
     if not net_switch_ok:
-        print("[WARNING] Network switch failed. Proceeding with remaining steps.")
+        err_msg = f"Step 2: 切换网络掩码 '{network_mask}' 失败！"
+        print(f"[ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
         
     # Step 3: Switch LTE RX Path via qc_lte_rx
     print("\n--- Step 3: Configuring LTE RX Paths ---")
@@ -346,19 +436,26 @@ def run_qc_flow(params):
         print(f"[*] Setting LTE Rx selection to mode: '{rx_mode}'")
         rx_ok = qc_lte_rx.switch_lte_rx(mode=rx_mode, client_name="QcOrchestrationLteRx")
         if not rx_ok:
-            print("[WARNING] LTE Rx path selection returned False.")
+            err_msg = f"Step 3: 设置 LTE Rx 分集模式 '{rx_mode}' 失败！"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
             
     # Step 4: Restore XQCN (moved to last step)
     print("\n--- Step 4: Restoring QCN/XQCN Backup ---")
     print(f"[*] Restoring backup from full path: {qcn_file}")
-    qc_restore_xqcn.restore_xqcn_for_device(target_adb_serial=serial, xqcn_path=qcn_file)
+    restore_ok = qc_restore_xqcn.restore_xqcn_for_device(target_adb_serial=serial, xqcn_path=qcn_file)
+    if not restore_ok:
+        err_msg = f"Step 4: 还原 QCN/XQCN 备份文件失败: {qcn_file}"
+        print(f"[ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
+        
     # Pause briefly to allow QUTS services to settle down after restore
     time.sleep(2)
     
     print("\n" + "="*70)
     print("QUALCOMM ANTENNA TESTING ORCHESTRATION FLOW COMPLETE")
     print("="*70 + "\n")
-    return True
+    return FlowResult(True, "")
 
 def main():
     parser = argparse.ArgumentParser(description="Qualcomm End-to-End Antenna Orchestration Script")
@@ -390,8 +487,10 @@ def main():
         
     try:
         # Execute the main orchestrated flow
-        success = run_qc_flow(params)
-        if not success:
+        res = run_qc_flow(params)
+        if not res:
+            err = res.error_message if isinstance(res, FlowResult) and res.error_message else "Qualcomm 流程执行失败。"
+            print(f"\n[FATAL ERROR] {err}")
             sys.exit(1)
     except Exception as e:
         print(f"\n[FATAL ERROR] Flow execution failed: {e}")

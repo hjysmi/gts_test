@@ -96,12 +96,15 @@ def restore_xqcn_for_device(target_adb_serial, xqcn_path="Avenger_0914.xqcn"):
     
     if error_code == 0:
         print("\n🎉 QCN/XQCN 导入指令成功下发并写入完毕！设备已自动安排重启。")
+        success = True
     else:
         print(f"\n❌ 导入失败，QUTS 报错代码: {error_code}")
         print("❌ 报错信息详情:", dev_config.getLastError())
+        success = False
         
     # 9. 清理并销毁服务
     dev_config.destroyService()
+    return success
 
 if __name__ == "__main__":
     # 参数 1: 目标 ADB 序列号 (例如 "NAVR120201" 或 "10.125.176.206:5555")

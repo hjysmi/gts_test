@@ -117,13 +117,15 @@ def control_mtk_logger(action, device_id=None):
     cmd = commands.get(action)
     if not cmd:
         print(f"[WARNING] Unknown MTK logger action: {action}")
-        return
+        return False
         
     print(f"[*] Executing MTK logger command for '{action}'...")
+    success = False
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode == 0:
             print(f"[+] MTK logger '{action}' command succeeded.")
+            success = True
         else:
             print(f"[WARNING] MTK logger '{action}' command returned exit code {result.returncode}.")
             print(f"  Stdout: {result.stdout.strip()}")
@@ -133,6 +135,7 @@ def control_mtk_logger(action, device_id=None):
         
     print(f"[*] Sleeping 5 seconds after '{action}'...")
     time.sleep(5)
+    return success
 
 
 def connect_to_device(device_id="auto", database="auto"):

@@ -1,6 +1,7 @@
 import sys
 import os
 import argparse
+import subprocess
 import mtk_atc_md
 import mtk_rx
 import mtk_tx
@@ -39,6 +40,67 @@ RAT_CONFIG_MAP = {
     "NR": {"rat": "NR", "mask": "NR_LTE"},
 }
 
+class FlowResult(tuple):
+    """
+    Result representing (success: bool, error_message: str).
+    Evaluates to True if success is True, False otherwise.
+    """
+    def __new__(cls, success: bool, error_message: str = ""):
+        return super().__new__(cls, (bool(success), str(error_message)))
+
+    @property
+    def success(self) -> bool:
+        return self[0]
+
+    @property
+    def error_message(self) -> str:
+        return self[1]
+
+    def __bool__(self):
+        return self[0]
+
+    def __repr__(self):
+        return f"FlowResult(success={self[0]}, error_message={repr(self[1])})"
+
+def check_adb_device(target_serial: str) -> tuple:
+    """
+    Verify if target_serial is present in 'adb devices' and in normal 'device' state.
+    Returns (True, "") if valid, or (False, error_message) if mismatched/unavailable.
+    """
+    try:
+        res = subprocess.run(["adb", "devices"], capture_output=True, text=True, check=False)
+        if res.returncode != 0:
+            return False, f"执行 'adb devices' 失败 (exit code {res.returncode}): {res.stderr.strip()}"
+            
+        lines = res.stdout.strip().splitlines()
+        device_map = {}
+        for line in lines[1:]:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                device_map[parts[0]] = parts[1]
+            elif len(parts) == 1:
+                device_map[parts[0]] = "unknown"
+                
+        if not device_map:
+            return False, "未检测到任何在线 ADB 设备。请检查 USB 数据线连接以及设备是否已开启开发者选项和 USB 调试。"
+            
+        if target_serial not in device_map:
+            available = list(device_map.keys())
+            return False, f"指定的设备序列号 '{target_serial}' 不在当前连接的 ADB 设备列表中！当前可用设备: {available}。请核对 --serial 参数。"
+            
+        status = device_map[target_serial]
+        if status != "device":
+            return False, f"目标设备 '{target_serial}' 状态异常 ({status})！若为 'unauthorized' 请在手机屏幕上确认允许 USB 调试；若为 'offline' 请重新插拔数据线。"
+            
+        return True, ""
+    except FileNotFoundError:
+        return False, "系统未找到 'adb' 命令，请确认 Android SDK Platform-Tools 已正确安装并配置到 PATH 环境变量中。"
+    except Exception as e:
+        return False, f"检查 ADB 设备列表时发生异常: {e}"
+
 def validate_params(params):
     """
     Validate the configuration parameter dictionary.
@@ -56,10 +118,16 @@ def validate_params(params):
         if key not in params:
             raise ValueError(f"Missing required parameter key: '{key}'")
             
-    # Validate serial
+    # Validate serial and check presence in adb devices
     serial = params["serial"]
     if not isinstance(serial, str) or not serial.strip():
         raise ValueError("Parameter 'serial' (ADB serial number) must be a non-empty string.")
+    serial = serial.strip()
+    params["serial"] = serial
+
+    adb_ok, adb_err = check_adb_device(serial)
+    if not adb_ok:
+        raise ValueError(f"ADB 设备检测失败: {adb_err}")
 
     # Validate RAT and derive network_mask
     rat_raw = params["rat"].upper() if isinstance(params["rat"], str) else ""
@@ -175,8 +243,9 @@ def run_mtk_flow(params):
         # Validate parameters dictionary
         validate_params(params)
     except ValueError as e:
-        print(f"\n[PARAM ERROR] Parameter validation failed: {e}")
-        sys.exit(1)
+        err_msg = f"Parameter validation failed: {e}"
+        print(f"\n[PARAM ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
 
     serial = params["serial"]
 
@@ -200,7 +269,12 @@ def run_mtk_flow(params):
         # Connect to MACE ONCE (before Step 4 Network Type Switch)
         print("\n--- Establishing Connection ---")
         print(f"[*] Connecting to MACE device ONCE (device_id={serial}) for shared use in network/TX/RX switching...")
-        device = mtk_atc_md.connect_to_device(device_id=serial, database="auto")
+        try:
+            device = mtk_atc_md.connect_to_device(device_id=serial, database="auto")
+        except Exception as e:
+            err_msg = f"连接 MACE 调制解调器设备失败: {e}"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
         
         # Step 4: Switch network type via android_network_manager
         print("\n--- Step 4: Switching Network Type ---")
@@ -211,8 +285,9 @@ def run_mtk_flow(params):
             device_id=serial
         )
         if not net_switch_ok:
-            print("[ERROR] Failed to switch network type. Aborting flow.")
-            return False
+            err_msg = f"Step 4: 设置网络制式掩码 '{params['network_mask']}' 失败！"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
         
         # Step 5: Switch TX via mtk_tx.py
         print("\n--- Step 5: Setting TX Antenna Force ---")
@@ -226,8 +301,9 @@ def run_mtk_flow(params):
             device=device
         )
         if not tx_ok:
-            print("[ERROR] TX Antenna Force configuration failed. Aborting flow.")
-            return False
+            err_msg = f"Step 5: 设置 TX 强迫发射天线失败 (rat={params['rat']}, band={params['band']}, tx_state={params['tx_state']})！"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
             
         # Step 6: Switch RX via mtk_rx.py
         print("\n--- Step 6: Setting RX Antenna Test ---")
@@ -244,10 +320,14 @@ def run_mtk_flow(params):
             device=device
         )
         if not rx_ok:
-            print("[ERROR] RX Antenna Test configuration failed.")
+            err_msg = f"Step 6: 设置 RX 接收分集测试失败 (mode={params['rx_mode']})！"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
             
     except Exception as e:
-        print(f"[ERROR] Session interaction with MACE failed: {e}")
+        err_msg = f"流程执行中发生异常: {e}"
+        print(f"[ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
     finally:
         # Step 7: Stop log
         print("\n--- Step 7: Stopping MTK Logger ---")
@@ -256,10 +336,11 @@ def run_mtk_flow(params):
     print("\n" + "="*70)
     if tx_ok and rx_ok:
         print("[SUCCESS] All steps in orchestration flow completed successfully!")
-        return True
+        return FlowResult(True, "")
     else:
-        print("[WARNING] Orchestration flow completed with warnings or step failures.")
-        return False
+        err_msg = "编排流程执行完毕，但存在未完全成功的步骤。"
+        print(f"[WARNING] {err_msg}")
+        return FlowResult(False, err_msg)
 
 # Backward-compatible alias for module integration
 run_orchestration_flow = run_mtk_flow
@@ -298,7 +379,11 @@ def main():
         
     try:
         # Execute the main flow
-        run_mtk_flow(params)
+        res = run_mtk_flow(params)
+        if not res:
+            err = res.error_message if isinstance(res, FlowResult) and res.error_message else "MTK 流程执行失败。"
+            print(f"\n[FATAL ERROR] {err}")
+            sys.exit(1)
     except Exception as e:
         print(f"\n[FATAL ERROR] Flow execution failed: {e}")
         sys.exit(1)
