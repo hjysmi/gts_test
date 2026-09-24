@@ -19,7 +19,7 @@ import android_network_manager
 # Allowed values for validation
 ALLOWED_RATS = ["LTE", "LTE_ONLY", "NR", "NR_ONLY"]
 ALLOWED_TX_VALUES = ["tx0", "tx1", "tx2", "tx3", "0", "1", "2", "3"]
-ALLOWED_RX_MODES = ["combine", "rx0", "rx1", "rx2", "rx3"]
+ALLOWED_RX_MODES = ["combine_4rx", "rx0", "rx1", "rx2", "rx3"]
 
 # Mapping from TX target to ASDiv config antenna override value (EFS node)
 TX_TO_ANT_VALUE_MAP = {
@@ -191,7 +191,7 @@ def main():
                         help="Target network tech: LTE or NR", type=str.upper)
     parser.add_argument("--tx", required=True, choices=["tx0", "tx1", "tx2", "tx3", "0", "1", "2", "3"], 
                         help="TX antenna target: tx0/0 (NV=0, ASDiv=00), tx1/1 (NV=17, ASDiv=11), tx2/2 (NV=34, ASDiv=22), tx3/3 (NV=51, ASDiv=33)", type=str.lower)
-    parser.add_argument("--rx-mode", choices=["combine", "rx0", "rx1", "rx2", "rx3"], 
+    parser.add_argument("--rx-mode", choices=["combine_4rx", "rx0", "rx1", "rx2", "rx3"], 
                         help="LTE RX path override mode. Required if RAT is LTE.", type=str.lower)
     parser.add_argument("--sim-slot", type=int, choices=[0, 1], default=0, 
                         help="SIM card slot: 0 for SIM1 (default), 1 for SIM2")

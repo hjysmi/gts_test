@@ -28,7 +28,7 @@
 | `--qcn-file` | `"qcn_file"` | `str` | **是** | *合法的文件路径* | **QCN/XQCN 备份文件的完整绝对路径**。<br>• 强校验：如果文件不存在或不是合法绝对路径，将立刻安全拦截。 |
 | `--rat` | `"rat"` | `str` | **是** | `LTE`, `LTE_ONLY`, `NR`, `NR_ONLY` | **测试目标通信制式**。<br>• `LTE` / `LTE_ONLY` 代表 4G 模式。<br>• `NR` / `NR_ONLY` 代表 5G 模式。 |
 | `--tx` | `"tx"` | `str` | **是** | `tx0`, `tx1`, `tx2`, `tx3`, `0`, `1`, `2`, `3` | **发射天线测试目标（同时自动联动 NV 73841 与 ASDiv EFS 节点配置）**。<br>• `tx0` / `0`: NV 73841 = `0` (0x00)，ASDiv 写入 `00`<br>• `tx1` / `1`: NV 73841 = `17` (0x11)，ASDiv 写入 `11`<br>• `tx2` / `2`: NV 73841 = `34` (0x22)，ASDiv 写入 `22`<br>• `tx3` / `3`: NV 73841 = `51` (0x33)，ASDiv 写入 `33` |
-| `--rx-mode` | `"rx_mode"` | `str` | *条件* | `combine`, `rx0`, `rx1`, `rx2`, `rx3` | **LTE RX 路径强迫配置模式**。<br>• **LTE** 下：**必填**参数。<br>• **NR** 下：**自动忽略并跳过**该步骤。 |
+| `--rx-mode` | `"rx_mode"` | `str` | *条件* | `combine_4rx`, `rx0`, `rx1`, `rx2`, `rx3` | **LTE RX 路径强迫配置模式**。<br>• **LTE** 下：**必填**参数。<br>• **NR** 下：**自动忽略并跳过**该步骤。 |
 | `--network-mask`| `"network_mask"`| `str` | **是** | `LTE_ONLY`, `NR_ONLY`, `NR_LTE`, `DEFAULT` | **测试目标网络掩码**。<br>• **必填**参数。指定切换后的网络屏蔽状态。<br>• 校验规则：必须匹配 `android_network_manager.py` 底层定义的网络类型。 |
 | `--sim-slot` | `"sim_slot"` | `int` | *否* | `0`, `1` | **SIM 卡槽**（默认为 `0`）。<br>• `0` 代表卡 1，`1` 代表卡 2。 |
 
