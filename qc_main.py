@@ -136,6 +136,7 @@ def run_qc_flow(params):
     2. Change Network Type via AdbDevice.
     3. Configure LTE RX Path (skipped in NR mode).
     4. Restore XQCN backup.
+    5. Reboot device and wait for boot completion (sys.boot_completed=1).
     """
     try:
         validate_params(params)
@@ -201,9 +202,11 @@ def run_qc_flow(params):
         print(f"[ERROR] {err_msg}")
         return FlowResult(False, err_msg)
 
-    # 重启设备使还原的 NV/XQCN 配置生效
-    print("\n[*] 正在重启设备使还原的 NV/XQCN 配置生效...")
-    adb_dev.reboot(wait_complete=False)
+    # Step 5: 重启设备使还原的 NV/XQCN 配置生效，并等待开机验证完成
+    print("\n--- Step 5: Rebooting Device and Waiting for Boot Completion ---")
+    res_reboot = adb_dev.reboot(wait_complete=True)
+    if not res_reboot:
+        return FlowResult(False, f"Step 5: 设备重启或等待开机完成失败: {res_reboot.error_message}")
 
     print("\n" + "="*70)
     print("QUALCOMM ANTENNA TESTING ORCHESTRATION FLOW COMPLETE")

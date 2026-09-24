@@ -188,12 +188,11 @@ def wait_for_adb_device(serial: str = "", timeout: int = 120) -> bool:
 
     if boot_completed:
         print("[+] 系统开机启动完成 (sys.boot_completed=1)！")
+        time.sleep(3)
+        return True
     else:
-        print("[WARNING] 等待 sys.boot_completed 超时，继续后续流程...")
-
-    # 暂停数秒以便系统 USB 端口配置完全生效
-    time.sleep(3)
-    return True
+        print("[ERROR] 等待 sys.boot_completed 超时 (90s)！")
+        return False
 
 
 class AdbDevice:
@@ -226,7 +225,7 @@ class AdbDevice:
         res = self.run_adb(["shell", "getprop", prop_name])
         return res.stdout.strip() if res.returncode == 0 else ""
 
-    def reboot(self, wait_complete: bool = False) -> FlowResult:
+    def reboot(self, wait_complete: bool = False, timeout: int = 120) -> FlowResult:
         """
         Reboot the Android device via ADB, optionally waiting for boot completion.
         """
@@ -238,8 +237,13 @@ class AdbDevice:
             return FlowResult(False, err_msg)
         print("[+] 重启指令已发送。")
         if wait_complete:
+            print("[*] 正在等待手机重启并重新连接...")
             time.sleep(5)
-            wait_for_adb_device(self.serial)
+            if not wait_for_adb_device(self.serial, timeout=timeout):
+                err_msg = f"等待设备 [{self.serial}] 重启开机完成超时！"
+                print(f"[ERROR] {err_msg}")
+                return FlowResult(False, err_msg)
+            print(f"[+] 设备 [{self.serial}] 重启开机完成，ADB 状态已就绪。")
         return FlowResult(True, "")
 
     def ensure_diag_mode(self) -> FlowResult:
