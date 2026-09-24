@@ -80,28 +80,33 @@ SCENARIOS = {
 }
 
 
-def control_mtk_logger(action):
+def control_mtk_logger(action, device_id=None):
     """
     Control MTK logger via ADB commands.
     :param action: 'stop', 'start', or 'switch_usb'
+    :param device_id: Optional ADB serial number targeting a specific device
     """
+    base_cmd = ["adb"]
+    if device_id:
+        base_cmd.extend(["-s", str(device_id)])
+
     commands = {
-        "stop": [
-            "adb", "shell", "am", "broadcast", 
+        "stop": base_cmd + [
+            "shell", "am", "broadcast", 
             "-a", "com.debug.loggerui.ADB_CMD", 
             "-e", "cmd_name", "stop", 
             "--ei", "cmd_target", "-1", 
             "-n", "com.debug.loggerui/.framework.LogReceiver"
         ],
-        "start": [
-            "adb", "shell", "am", "broadcast", 
+        "start": base_cmd + [
+            "shell", "am", "broadcast", 
             "-a", "com.debug.loggerui.ADB_CMD", 
             "-e", "cmd_name", "start", 
             "--ei", "cmd_target", "-1", 
             "-n", "com.debug.loggerui/.framework.LogReceiver"
         ],
-        "switch_usb": [
-            "adb", "shell", "am", "broadcast", 
+        "switch_usb": base_cmd + [
+            "shell", "am", "broadcast", 
             "-a", "com.debug.loggerui.ADB_CMD", 
             "-e", "cmd_name", "switch_modem_log_mode", 
             "--ei", "cmd_target", "1", 
@@ -134,9 +139,10 @@ def connect_to_device(device_id="auto", database="auto"):
     """
     Connect to MACE device.
     """
-    print(f"[*] Connecting to device via MACE (device={device_id}, database={database})...")
+    mace_target = "auto" if not device_id or not str(device_id).upper().startswith("COM") else device_id
+    print(f"[*] Connecting to device via MACE (device={mace_target}, database={database})...")
     try:
-        device = mace.connect_device(device_id, database=database)
+        device = mace.connect_device(mace_target, database=database)
         print("[+] Successfully connected to MACE device!")
         return device
     except Exception as e:

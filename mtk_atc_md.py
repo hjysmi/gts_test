@@ -14,28 +14,33 @@ DEFAULT_OUT_DIR = r"D:\share_179\0519\bank_prod\out"
 DEFAULT_LOG_FILE = "modem_log.elg"
 
 
-def control_mtk_logger(action):
+def control_mtk_logger(action, device_id=None):
     """
     Control MTK logger via ADB commands.
     :param action: 'stop', 'start', or 'switch_usb'
+    :param device_id: Optional ADB serial number targeting a specific device
     """
+    base_cmd = ["adb"]
+    if device_id:
+        base_cmd.extend(["-s", str(device_id)])
+
     commands = {
-        "stop": [
-            "adb", "shell", "am", "broadcast", 
+        "stop": base_cmd + [
+            "shell", "am", "broadcast", 
             "-a", "com.debug.loggerui.ADB_CMD", 
             "-e", "cmd_name", "stop", 
             "--ei", "cmd_target", "-1", 
             "-n", "com.debug.loggerui/.framework.LogReceiver"
         ],
-        "start": [
-            "adb", "shell", "am", "broadcast", 
+        "start": base_cmd + [
+            "shell", "am", "broadcast", 
             "-a", "com.debug.loggerui.ADB_CMD", 
             "-e", "cmd_name", "start", 
             "--ei", "cmd_target", "-1", 
             "-n", "com.debug.loggerui/.framework.LogReceiver"
         ],
-        "switch_usb": [
-            "adb", "shell", "am", "broadcast", 
+        "switch_usb": base_cmd + [
+            "shell", "am", "broadcast", 
             "-a", "com.debug.loggerui.ADB_CMD", 
             "-e", "cmd_name", "switch_modem_log_mode", 
             "--ei", "cmd_target", "1", 
@@ -74,13 +79,15 @@ def connect_to_device(device_id="auto", database="auto"):
     """
     连接到 MACE 调试设备
     (Connect to device via MACE)
-    :param device_id: 设备标识符 (e.g., "auto")
+    :param device_id: 设备标识符 (e.g., "auto" 或 ADB 序列号)
     :param database: 数据库类型 (e.g., "auto")
     :return: connected device instance
     """
-    print(f"[*] Connecting to device via MACE (device={device_id}, database={database})...")
+    # MACE requires "auto" or a specific COM port. If an ADB serial is passed, use "auto".
+    mace_target = "auto" if not device_id or not str(device_id).upper().startswith("COM") else device_id
+    print(f"[*] Connecting to device via MACE (device={mace_target}, database={database})...")
     try:
-        device = mace.connect_device(device_id, database=database)
+        device = mace.connect_device(mace_target, database=database)
         print("[+] Successfully connected to MACE device!")
         return device
     except Exception as e:

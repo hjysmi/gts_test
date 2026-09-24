@@ -51,11 +51,16 @@ def validate_params(params):
     if "rx_mode" not in params and "rx_scenario" in params:
         params["rx_mode"] = params["rx_scenario"]
 
-    required_keys = ["rat", "band", "tx_state", "ttps_port", "sim_slot", "rx_mode"]
+    required_keys = ["serial", "rat", "band", "tx_state", "ttps_port", "sim_slot", "rx_mode"]
     for key in required_keys:
         if key not in params:
             raise ValueError(f"Missing required parameter key: '{key}'")
             
+    # Validate serial
+    serial = params["serial"]
+    if not isinstance(serial, str) or not serial.strip():
+        raise ValueError("Parameter 'serial' (ADB serial number) must be a non-empty string.")
+
     # Validate RAT and derive network_mask
     rat_raw = params["rat"].upper() if isinstance(params["rat"], str) else ""
     if rat_raw not in ALLOWED_RATS:
@@ -173,17 +178,19 @@ def run_mtk_flow(params):
         print(f"\n[PARAM ERROR] Parameter validation failed: {e}")
         sys.exit(1)
 
+    serial = params["serial"]
+
     # Step 1: Stop log
     print("\n--- Step 1: Stopping MTK Logger ---")
-    mtk_rx.control_mtk_logger("stop")
+    mtk_rx.control_mtk_logger("stop", device_id=serial)
     
     # Step 2: Switch modem mode to USB mode
     print("\n--- Step 2: Setting Modem Logging Mode to USB ---")
-    mtk_rx.control_mtk_logger("switch_usb")
+    mtk_rx.control_mtk_logger("switch_usb", device_id=serial)
     
     # Step 3: Start log
     print("\n--- Step 3: Starting MTK Logger ---")
-    mtk_rx.control_mtk_logger("start")
+    mtk_rx.control_mtk_logger("start", device_id=serial)
     
     device = None
     tx_ok = False
@@ -192,15 +199,16 @@ def run_mtk_flow(params):
     try:
         # Connect to MACE ONCE (before Step 4 Network Type Switch)
         print("\n--- Establishing Connection ---")
-        print("[*] Connecting to MACE device ONCE for shared use in network/TX/RX switching...")
-        device = mtk_atc_md.connect_to_device("auto", database="auto")
+        print(f"[*] Connecting to MACE device ONCE (device_id={serial}) for shared use in network/TX/RX switching...")
+        device = mtk_atc_md.connect_to_device(device_id=serial, database="auto")
         
         # Step 4: Switch network type via android_network_manager
         print("\n--- Step 4: Switching Network Type ---")
         mask_enum = android_network_manager.NetworkMask[params["network_mask"].upper()]
         net_switch_ok = android_network_manager.set_allowed_network_type(
             sim_slot=params["sim_slot"],
-            mask=mask_enum
+            mask=mask_enum,
+            device_id=serial
         )
         if not net_switch_ok:
             print("[ERROR] Failed to switch network type. Aborting flow.")
@@ -243,7 +251,7 @@ def run_mtk_flow(params):
     finally:
         # Step 7: Stop log
         print("\n--- Step 7: Stopping MTK Logger ---")
-        mtk_rx.control_mtk_logger("stop")
+        mtk_rx.control_mtk_logger("stop", device_id=serial)
     
     print("\n" + "="*70)
     if tx_ok and rx_ok:
@@ -258,6 +266,7 @@ run_orchestration_flow = run_mtk_flow
 
 def main():
     parser = argparse.ArgumentParser(description="MTK End-to-End Antenna Orchestration Script")
+    parser.add_argument("--serial", required=True, help="Target device ADB serial number")
     parser.add_argument("--rat", required=True, 
                         choices=["LTE", "LTE_TDD", "NR_SA", "NR_NSA", "NR", "NR_ONLY", "NR_LTE"], 
                         help="RAT & network mode: LTE (FDD), LTE_TDD, NR_SA/NR_ONLY (5G SA), NR_NSA/NR_LTE/NR (5G NSA)", 
@@ -276,6 +285,7 @@ def main():
     
     # Package into a parameters dictionary
     params = {
+        "serial": args.serial,
         "rat": args.rat,
         "band": args.band,
         "tx_state": args.tx_state,
