@@ -38,7 +38,7 @@
 
 ### 参数解析详情
 
-`AT+EGMC=1,"lte_force_ttps",1,0,0,1` 的参数格式与内部结构体定义（对应 `el1_uac_tx_path_switch_req_struct`）映射如下：
+`AT+EGMC=1,"lte_force_ttps",1,0,0,1,1` 的参数格式与内部结构体定义（对应 `el1_uac_tx_path_switch_req_struct`）映射如下：
 
 | 参数位置 | 参数值 | 对应字段 | 含义说明 |
 | :--- | :--- | :--- | :--- |
@@ -47,8 +47,8 @@
 | 参数 1 | 1 | mode | 开关控制：1 表示 Enable（开启），0 表示 Disable |
 | 参数 2 | 0 | tx_state | 期望的 Tx State（范围 0 ~ 31） |
 | 参数 3 | 0 | rx_state | 期望的 Rx State（范围 0 ~ 31） |
-| 参数 4 | 1 | tx_path / ttps_port | 期望强制生效的 TTPS 天线端口/发射路径（当前为 1） |
-| 参数 5 (可选) | (缺省) | band | 指定生效的频段（未填则默认对当前频段生效） |
+| 参数 4 | 1 | tx_path / ttps_port | 期望强制生效的 TTPS 天线端口/发射路径（0 为 Tx Path 0，1 为 Tx Path 1） |
+| 参数 5 | 1 | band | 指定生效的频段（如 Band 1） |
 
 #### 核心对应关系：ttps_port 与 Tx Path
 
@@ -58,6 +58,12 @@
 | :--- | :--- | :--- |
 | **`ttps_port = 0`** | **Tx Path 0** | `Utas TxCandidAnt Info Tx Path0` |
 | **`ttps_port = 1`** | **Tx Path 1** | `Utas TxCandidAnt Info Tx Path1` |
+
+##### 实际生效验证（来源于 `l1_trace.txt` 日志）：
+
+| Type | Index | FRC (64us) | Time | Module | Message | Comment |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| L1 | 2049242 | 367364776 | 21:19:42.589056 2026/9/24 | MML1_UAC_PUBLIC | `[MML1][UTAS][SPAT][PUBLIC][0]MEAS_PRMS: cc_idx=0, band: B1, PHR=0, SNR[25, 255, 255, 255], RSRP[-88, 255, 255, 255], RX_ANT: [ANT2, ANT8, ANT9, ANT6], TX_ANT: ANT2` | 证实 ttps_port=0 下发后生效为 ANT2 |
 
 ```text
                     ┌── 射频开关 ───► ANT2 (物理天线2)

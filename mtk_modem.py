@@ -204,19 +204,20 @@ class MtkModemSession:
         """
         Set MTK TX antenna forced configuration via EGMC AT command.
         """
+        tas_mode = 1  # 1 为 Enable 开关
         rat_upper = rat.upper()
         if rat_upper in ("LTE", "LTE_FDD"):
             # LTE FDD: rx_state must match tx_state
             rx_val = tx_state
-            at_cmd = f'AT+EGMC=1,"lte_force_ttps",{band},{tx_state},{rx_val},{ttps_port}'
+            at_cmd = f'AT+EGMC=1,"lte_force_ttps",{tas_mode},{tx_state},{rx_val},{ttps_port},{band}'
         elif rat_upper in ("LTE_TDD", "LTE TDD"):
             if rx_state is None:
                 return FlowResult(False, "LTE_TDD 制式下 rx_state 为必填参数！")
-            at_cmd = f'AT+EGMC=1,"lte_force_ttps",{band},{tx_state},{rx_state},{ttps_port}'
+            at_cmd = f'AT+EGMC=1,"lte_force_ttps",{tas_mode},{tx_state},{rx_state},{ttps_port},{band}'
         elif rat_upper in ("NR", "NR_SA", "NR_NSA"):
             if rx_state is None:
                 return FlowResult(False, "NR 制式下 rx_state 为必填参数！")
-            at_cmd = f'AT+EGMC=1,"NR_force_TTPS",{band},{tx_state},{rx_state},{ttps_port}'
+            at_cmd = f'AT+EGMC=1,"NR_force_TTPS",{tas_mode},{tx_state},{rx_state},{ttps_port},{band}'
         else:
             return FlowResult(False, f"不支持的制式: '{rat}'")
 
