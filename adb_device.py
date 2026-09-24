@@ -9,6 +9,7 @@ configuration, MTK logger broadcasts, and diagnostic fastboot bootmode managemen
 
 import subprocess
 import time
+import re
 from enum import Enum
 from typing import Optional, Union, Tuple, List, Dict
 
@@ -195,6 +196,49 @@ def wait_for_adb_device(serial: str = "", timeout: int = 120) -> bool:
         return False
 
 
+def get_hardware_platform(serial: str = "") -> Optional[str]:
+    """
+    通过 ADB 执行 `getprop ro.hardware` 获取目标设备的芯片平台类别。
+
+    判定规则：
+    1. 若 `ro.hardware` 属性值为 'qcom'（忽略大小写），返回 'qcom'（高通平台）；
+    2. 若 `ro.hardware` 属性值为 'mt' 开头且后接数字（例如 'mt6897', 'mt6765'，忽略大小写），返回 'mtk'（联发科平台）；
+    3. 其他未知平台或未能读取到有效值时，返回 None。
+
+    参数:
+        serial (str): 可选，目标设备的 ADB 序列号。为空时默认操作单台连接设备。
+
+    返回:
+        Optional[str]: 'qcom' | 'mtk' | None
+    """
+    cmd = ["adb"]
+    if serial:
+        cmd.extend(["-s", str(serial).strip()])
+    cmd.extend(["shell", "getprop", "ro.hardware"])
+
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if res.returncode != 0:
+            return None
+
+        val = res.stdout.strip().lower()
+        if not val:
+            return None
+
+        # 1. 高通平台判定 (如 'qcom')
+        if val == "qcom" or val.startswith("qcom"):
+            return "qcom"
+
+        # 2. 联发科平台判定 (如 'mt6897', 'mt6765')
+        if re.match(r"^mt\d+", val):
+            return "mtk"
+
+        # 3. 其他未知芯片平台
+        return None
+    except Exception:
+        return None
+
+
 class AdbDevice:
     """
     Deep encapsulation of Android Device interaction via ADB and Fastboot.
@@ -224,6 +268,13 @@ class AdbDevice:
         """
         res = self.run_adb(["shell", "getprop", prop_name])
         return res.stdout.strip() if res.returncode == 0 else ""
+
+    def get_hardware_platform(self) -> Optional[str]:
+        """
+        获取当前设备的芯片平台类型 ('qcom', 'mtk', 或 None)。
+        基于 ADB 执行 `getprop ro.hardware` 属性值判断。
+        """
+        return get_hardware_platform(self.serial)
 
     def reboot(self, wait_complete: bool = False, timeout: int = 120) -> FlowResult:
         """
