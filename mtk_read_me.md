@@ -24,14 +24,14 @@
 
 | 参数名 (CLI) | 字典 Key (Dict) | 类型 (Type) | 必填 | 取值范围 / 选项 | 物理含义与校验规则 |
 | :--- | :--- | :--- | :---: | :--- | :--- |
-| `--rat` | `"rat"` | `str` | **是** | `LTE`, `LTE_TDD`, `NR` | **通信制式**。<br>• `LTE` 代表 LTE FDD 模式。<br>• `LTE_TDD` 代表 LTE TDD 模式。<br>• `NR` 代表 5G Sub6 模式。 |
+| `--rat` | `"rat"` | `str` | **是** | `LTE` (FDD)<br>`LTE_TDD`<br>`NR_SA` (或 `NR_ONLY`)<br>`NR_NSA` (或 `NR`, `NR_LTE`) | **通信制式（已合并原 --network-mask，自动配置网络掩码）**。<br>• `LTE` / `LTE_FDD`: 4G FDD 模式，自动配置掩码 `LTE_ONLY`<br>• `LTE_TDD`: 4G TDD 模式，自动配置掩码 `LTE_ONLY`<br>• `NR_SA` / `NR_ONLY`: 5G SA 独立组网，自动配置掩码 `NR_ONLY`<br>• `NR_NSA` / `NR_LTE` / `NR`: 5G NSA 模式，自动配置掩码 `NR_LTE`（保留 4G 锚点避免脱网） |
 | `--band` | `"band"` | `int` | **是** | `1 ~ 255` | **测试频段号**。<br>• **LTE 强校检**：如果 RAT 为 `LTE`，频段必须属于 FDD 频段；如果为 `LTE_TDD`，则必须属于 TDD 频段。 |
 | `--tx-state` | `"tx_state"` | `int` | **是** | `0 ~ 23`, `255` | **Tx TAS State (发射天线选择状态)**。<br>• 取值代表射频给定的状态切换索引（不等于物理天线编号）。`255` 代表默认（Default）。 |
 | `--rx-state` | `"rx_state"` | `int` | *条件* | `0 ~ 23`, `255` | **Rx TAS State (接收天线选择状态)**。<br>• **LTE (FDD)** 下：**绝对不能**传入此参数，底层会自动使用 `tx_state` 填充 Rx 状态。<br>• **LTE_TDD / NR** 下：**必须**传入此参数。 |
 | `--ttps-port` | `"ttps_port"` | `int` | **是** | `0`, `1` | **TTPS TX 物理端口**。<br>• 选择射频发射的主通道/副通道端口。 |
 | `--sim-slot` | `"sim_slot"` | `int` | **是** | `0`, `1` | **SIM 卡槽**。<br>• `0` 代表卡 1 (SIM 1)，`1` 代表卡 2 (SIM 2)。 |
-| `--network-mask`| `"network_mask"`| `str` | **是** | `LTE_ONLY`, `NR_ONLY`, `NR_LTE`, `DEFAULT` | **Android 允许的网络制式掩码**。<br>• `LTE_ONLY`: 仅限 4G<br>• `NR_ONLY`: 仅限 5G<br>• `NR_LTE`: 5G/4G 自动（禁用 2G/3G）<br>• `DEFAULT`: 恢复默认全自动。 |
-| `--rx-scenario` | `"rx_scenario"` | `str` | **单/多选** | `Combine_4Rx`, `Combine_2Rx`, `Rx0`, `Rx1`, `Rx2`, `Rx3` | **RX 天线测试测试场景名称**。<br>• `Combine_4Rx`: Combine_4Rx (4Rx 全勾选模式)<br>• `Combine_2Rx`: Combine_2Rx (2Rx 全勾选模式，Rx12+Rx12+Rx12+Rx12)<br>• `Rx0`: Rx0 强迫单通测试<br>• `Rx1`: Rx1 强迫单通测试<br>• `Rx2`: Rx2 强迫双接收分集<br>• `Rx3`: Rx3 强迫分集测试 |
+| `--rx-mode` | `"rx_mode"` | `str` | **是** | `combine_4rx`, `combine_2rx`,<br>`rx0`, `rx1`, `rx2`, `rx3` | **RX 接收天线测试模式**。<br>• `combine_4rx`: 4Rx 全勾选模式<br>• `combine_2rx`: 2Rx 全勾选模式 (Rx12+Rx12+Rx12+Rx12)<br>• `rx0`: Rx0 强迫单通测试<br>• `rx1`: Rx1 强迫单通测试<br>• `rx2`: Rx2 强迫双接收分集<br>• `rx3`: Rx3 强迫分集测试 |
+| *(已合并)*<br>`--network-mask` | `"network_mask"` | `str` | *已移除* | `LTE_ONLY`, `NR_ONLY`, `NR_LTE`, `DEFAULT` | **已合并进 `--rat` 自动推导，CLI 命令行参数已移除**。<br>• 仅限 Python 字典调用时可选传入；若显式传入将自动校验其与 `rat` 是否冲突。 |
 
 ---
 
@@ -39,14 +39,20 @@
 
 本脚本在执行首步操作前，会通过 `validate_params()` 启动强类型和业务规则校检，以下任意不匹配项均会**立刻拦截并安全报错**：
 
-1. **频段与双工错配拦截 (LTE FDD vs TDD Band)**:
+1. **制式与网络掩码自适应推导与防冲突**:
+   * 无需手动传入网络掩码，系统根据 `--rat` 自动完成推导：
+     * `LTE` / `LTE_TDD` $\rightarrow$ 自动绑定 `LTE_ONLY`
+     * `NR_SA` $\rightarrow$ 自动绑定 `NR_ONLY`
+     * `NR_NSA` / `NR` $\rightarrow$ 自动绑定 `NR_LTE`（保障 4G LTE 锚点驻留）
+   * 若外部调用时同时传入了 `network_mask`，将启动**兼容互斥校检**（例如传入 `rat="LTE"` 但 `network_mask="NR_ONLY"` 将直接拦截报错）。
+2. **频段与双工错配拦截 (LTE FDD vs TDD Band)**:
    * **LTE (FDD)** 常用频段集合：`{1, 2, 3, 4, 5, 7, 8, 12, 13, 14, 17, 18, 19, 20, 21, 25, 26, 28, 30, 31, 32, 66, 71}`
    * **LTE TDD** 常用频段集合：`{34, 37, 38, 39, 40, 41, 42, 43, 46, 48}`
    * *例：若 `--rat LTE` (FDD) 但传入 `--band 41`，程序将报错中断。*
-2. **接收天线状态 (Rx TAS State) 隔离规则**:
+3. **接收天线状态 (Rx TAS State) 隔离规则**:
    * **LTE (FDD)** 制式下：程序硬性限制**不得传入** `rx_state`。若强行传入将抛出错误。
    * **LTE TDD** 和 **NR** 制式下：程序硬性限制**必须传入** `rx_state`。若遗漏将抛出错误。
-3. **接口取值域验证**:
+4. **接口取值域验证**:
    * 确保卡槽、端口、天线档位与场景 ID 在出厂硬编码安全取值范围内。
 
 ---
@@ -60,19 +66,25 @@
 #### A. LTE FDD 黄金频段 3 强迫发射与分集测试
 *发射和接收天线均强制设定为状态 `1`，选择端口 `0`，网络锁定 4G，SIM卡1*
 ```bash
-python mtk_main.py --rat LTE --band 1 --tx-state 0 --ttps-port 1 --sim-slot 0 --network-mask LTE_ONLY --rx-scenario Rx0
+python mtk_main.py --rat LTE --band 1 --tx-state 0 --ttps-port 1 --sim-slot 0 --rx-mode rx0
 ```
 
 #### B. LTE TDD 频段 41 强迫发射与分集测试
 *时分双工下，强迫发射为状态 `2`，强制接收为状态 `0`（收发分离），网络锁定 4G，SIM卡1*
 ```bash
-python mtk_main.py --rat LTE_TDD --band 41 --tx-state 2 --rx-state 0 --ttps-port 1 --sim-slot 0 --network-mask LTE_ONLY --rx-scenario Rx0
+python mtk_main.py --rat LTE_TDD --band 41 --tx-state 2 --rx-state 0 --ttps-port 1 --sim-slot 0 --rx-mode rx0
 ```
 
-#### C. 5G NR 频段 78 强迫发射与分集测试
-*强迫发射为状态 `3`，强制接收为状态 `1`，网络自动切换为 5G/4G，SIM卡1*
+#### C. 5G SA 频段 78 强迫发射与分集测试
+*纯 5G 独占网络锁定，强迫发射为状态 `3`，强制接收为状态 `1`，SIM卡1*
 ```bash
-python mtk_main.py --rat NR --band 78 --tx-state 3 --rx-state 1 --ttps-port 0 --sim-slot 0 --network-mask NR_LTE --rx-scenario Rx1
+python mtk_main.py --rat NR_SA --band 78 --tx-state 3 --rx-state 1 --ttps-port 0 --sim-slot 0 --rx-mode rx1
+```
+
+#### D. 5G NSA 频段 78 强迫发射与分集测试
+*保留 4G 锚点避免脱网，强迫发射为状态 `3`，强制接收为状态 `1`，SIM卡1*
+```bash
+python mtk_main.py --rat NR_NSA --band 78 --tx-state 3 --rx-state 1 --ttps-port 0 --sim-slot 0 --rx-mode rx1
 ```
 
 ---
@@ -85,16 +97,15 @@ python mtk_main.py --rat NR --band 78 --tx-state 3 --rx-state 1 --ttps-port 0 --
 import sys
 from mtk_main import validate_params, run_orchestration_flow
 
-# 1. 准备您的测试字典类参数 (如 5G 场景测试)
+# 1. 准备您的测试字典类参数 (如 5G 场景测试，无需显式指定 network_mask，自动由 rat 推导)
 test_config = {
-    "rat": "NR",
+    "rat": "NR_NSA",
     "band": 78,
     "tx_state": 1,
     "rx_state": 3,
     "ttps_port": 0,
     "sim_slot": 0,
-    "network_mask": "NR_LTE",
-    "rx_scenario": "Rx0"
+    "rx_mode": "rx0"
 }
 
 # 2. 放入 try-catch 块中执行

@@ -10,14 +10,33 @@ import android_network_manager
 LTE_FDD_BANDS = {1, 2, 3, 4, 5, 7, 8, 12, 13, 14, 17, 18, 19, 20, 21, 25, 26, 28, 30, 31, 32, 66, 71}
 LTE_TDD_BANDS = {34, 37, 38, 39, 40, 41, 42, 43, 46, 48}
 
-# Mapping RX scenario names to their original integer scenario IDs
-RX_SCENARIOS_MAP = {
-    "COMBINE_4RX": 1,
-    "COMBINE_2RX": 6,
-    "RX0": 2,
-    "RX1": 3,
-    "RX2": 4,
-    "RX3": 5
+# Mapping RX mode names to their original integer scenario IDs
+RX_MODES_MAP = {
+    "combine_4rx": 1,
+    "combine_2rx": 6,
+    "rx0": 2,
+    "rx1": 3,
+    "rx2": 4,
+    "rx3": 5
+}
+ALLOWED_RX_MODES = list(RX_MODES_MAP.keys())
+
+ALLOWED_RATS = ["LTE", "LTE_FDD", "LTE_TDD", "NR_SA", "NR_ONLY", "NR", "NR_NSA", "NR_LTE"]
+
+# Mapping from RAT selection to canonical RAT type and Android network mask
+RAT_CONFIG_MAP = {
+    # 4G FDD
+    "LTE": {"rat": "LTE", "mask": "LTE_ONLY"},
+    "LTE_FDD": {"rat": "LTE", "mask": "LTE_ONLY"},
+    # 4G TDD
+    "LTE_TDD": {"rat": "LTE_TDD", "mask": "LTE_ONLY"},
+    # 5G 独立组网 (SA)
+    "NR_SA": {"rat": "NR", "mask": "NR_ONLY"},
+    "NR_ONLY": {"rat": "NR", "mask": "NR_ONLY"},
+    # 5G 非独立组网 (NSA) - 必须保留 LTE 锚点避免掉网
+    "NR_NSA": {"rat": "NR", "mask": "NR_LTE"},
+    "NR_LTE": {"rat": "NR", "mask": "NR_LTE"},
+    "NR": {"rat": "NR", "mask": "NR_LTE"},
 }
 
 def validate_params(params):
@@ -28,22 +47,53 @@ def validate_params(params):
     if not isinstance(params, dict):
         raise ValueError("Parameters must be passed as a dictionary class.")
         
-    required_keys = ["rat", "band", "tx_state", "ttps_port", "sim_slot", "network_mask", "rx_scenario"]
+    # Allow rx_scenario as backward-compatible fallback for rx_mode
+    if "rx_mode" not in params and "rx_scenario" in params:
+        params["rx_mode"] = params["rx_scenario"]
+
+    required_keys = ["rat", "band", "tx_state", "ttps_port", "sim_slot", "rx_mode"]
     for key in required_keys:
         if key not in params:
             raise ValueError(f"Missing required parameter key: '{key}'")
             
-    # Validate RAT
-    rat = params["rat"].upper() if isinstance(params["rat"], str) else ""
-    if rat not in ["LTE", "LTE_TDD", "NR"]:
-        raise ValueError(f"Invalid RAT: '{params['rat']}'. Must be 'LTE', 'LTE_TDD', or 'NR'.")
+    # Validate RAT and derive network_mask
+    rat_raw = params["rat"].upper() if isinstance(params["rat"], str) else ""
+    if rat_raw not in ALLOWED_RATS:
+        raise ValueError(f"Invalid RAT: '{params['rat']}'. Must be one of: {ALLOWED_RATS}")
         
+    config = RAT_CONFIG_MAP[rat_raw]
+    canonical_rat = config["rat"]
+    derived_mask = config["mask"]
+    params["rat"] = canonical_rat
+
+    # Parameter conflict validation for network_mask (if explicitly passed in dict)
+    if "network_mask" in params and params["network_mask"]:
+        user_mask = params["network_mask"].upper()
+        try:
+            android_network_manager.NetworkMask[user_mask]
+        except KeyError:
+            raise ValueError(f"Invalid 'network_mask': '{user_mask}'. Must be one of: "
+                             f"{[m.name for m in android_network_manager.NetworkMask]}")
+        # Conflict checks
+        if canonical_rat in ["LTE", "LTE_TDD"] and user_mask != "LTE_ONLY":
+            raise ValueError(f"Parameter conflict: RAT '{rat_raw}' (LTE) is incompatible with "
+                             f"network_mask '{user_mask}'. Expected 'LTE_ONLY'.")
+        elif rat_raw in ["NR_SA", "NR_ONLY"] and user_mask != "NR_ONLY":
+            raise ValueError(f"Parameter conflict: RAT '{rat_raw}' (5G SA) is incompatible with "
+                             f"network_mask '{user_mask}'. Expected 'NR_ONLY'.")
+        elif rat_raw in ["NR_NSA", "NR_LTE"] and user_mask not in ["NR_LTE", "DEFAULT"]:
+            raise ValueError(f"Parameter conflict: RAT '{rat_raw}' (5G NSA) is incompatible with "
+                             f"network_mask '{user_mask}'. NSA requires 'NR_LTE' or 'DEFAULT'.")
+        params["network_mask"] = user_mask
+    else:
+        params["network_mask"] = derived_mask
+
     # Validate Band and its alignment with RAT
     band = params["band"]
     if not isinstance(band, int) or band <= 0:
         raise ValueError(f"Invalid band: '{band}'. Must be a positive integer.")
         
-    if rat == "LTE":
+    if canonical_rat == "LTE":
         # Must be LTE FDD
         if band not in LTE_FDD_BANDS:
             if band in LTE_TDD_BANDS:
@@ -55,7 +105,7 @@ def validate_params(params):
         if params.get("rx_state") is not None:
             raise ValueError(f"Invalid configuration: 'rx_state' (Rx TAS State) was set to {params['rx_state']}, but Rx TAS State must not be set for LTE FDD.")
             
-    elif rat == "LTE_TDD":
+    elif canonical_rat == "LTE_TDD":
         # Must be LTE TDD
         if band not in LTE_TDD_BANDS:
             if band in LTE_FDD_BANDS:
@@ -67,7 +117,7 @@ def validate_params(params):
         if params.get("rx_state") is None:
             raise ValueError("Invalid configuration: 'rx_state' (Rx TAS State) is required when RAT is LTE_TDD.")
             
-    elif rat == "NR":
+    elif canonical_rat == "NR":
         # For NR, Rx TAS State is required
         if params.get("rx_state") is None:
             raise ValueError("Invalid configuration: 'rx_state' (Rx TAS State) is required when RAT is NR.")
@@ -91,21 +141,12 @@ def validate_params(params):
     sim_slot = params["sim_slot"]
     if sim_slot not in (0, 1):
         raise ValueError(f"Invalid 'sim_slot': {sim_slot}. Must be 0 (SIM 1) or 1 (SIM 2).")
-        
-    # Validate Network Mask
-    mask_str = params["network_mask"].upper() if isinstance(params["network_mask"], str) else ""
-    try:
-        android_network_manager.NetworkMask[mask_str]
-    except KeyError:
-        raise ValueError(f"Invalid 'network_mask': '{params['network_mask']}'. Must be one of: "
-                         f"{[m.name for m in android_network_manager.NetworkMask]}")
                          
-    # Validate RX Scenario Name
-    rx_scenario = params["rx_scenario"].upper() if isinstance(params["rx_scenario"], str) else ""
-    if rx_scenario not in RX_SCENARIOS_MAP:
-        raise ValueError(f"Invalid 'rx_scenario': '{params['rx_scenario']}'. Must be one of "
-                         f"{list(RX_SCENARIOS_MAP.keys())} or matching casing: "
-                         f"['Combine_4Rx', 'Combine_2Rx', 'Rx0', 'Rx1', 'Rx2', 'Rx3'].")
+    # Validate RX Mode
+    rx_mode_raw = str(params["rx_mode"]).lower() if "rx_mode" in params and params["rx_mode"] is not None else ""
+    if rx_mode_raw not in RX_MODES_MAP:
+        raise ValueError(f"Invalid 'rx_mode': '{params.get('rx_mode')}'. Must be one of: {ALLOWED_RX_MODES}")
+    params["rx_mode"] = rx_mode_raw
 
     print("[+] Parameters validated successfully.")
     return True
@@ -184,8 +225,8 @@ def run_mtk_flow(params):
         print("\n--- Step 6: Setting RX Antenna Test ---")
         print("[*] Switching RX (reusing pre-connected device, logger control is skipped)...")
         
-        # Map scenario name to original integer ID
-        scenario_id = RX_SCENARIOS_MAP[params["rx_scenario"].upper()]
+        # Map rx_mode to original integer scenario ID
+        scenario_id = RX_MODES_MAP[params["rx_mode"].lower()]
         
         rx_net_type = "4g" if params["rat"].upper() in ("LTE", "LTE_TDD") else "nr"
         rx_ok = mtk_rx.run_antenna_rx_test(
@@ -212,21 +253,24 @@ def run_mtk_flow(params):
         print("[WARNING] Orchestration flow completed with warnings or step failures.")
         return False
 
+# Backward-compatible alias for module integration
+run_orchestration_flow = run_mtk_flow
+
 def main():
     parser = argparse.ArgumentParser(description="MTK End-to-End Antenna Orchestration Script")
-    parser.add_argument("--rat", required=True, choices=["LTE", "LTE_TDD", "NR"], 
-                        help="RAT selection: LTE (FDD), LTE_TDD, or NR", type=str.upper)
+    parser.add_argument("--rat", required=True, 
+                        choices=["LTE", "LTE_TDD", "NR_SA", "NR_NSA", "NR", "NR_ONLY", "NR_LTE"], 
+                        help="RAT & network mode: LTE (FDD), LTE_TDD, NR_SA/NR_ONLY (5G SA), NR_NSA/NR_LTE/NR (5G NSA)", 
+                        type=str.upper)
     parser.add_argument("--band", required=True, type=int, help="Band number")
     parser.add_argument("--tx-state", required=True, type=int, help="Tx TAS State (0-23, or 255)")
     parser.add_argument("--rx-state", type=int, help="Rx TAS State (0-23, or 255). Required for LTE_TDD and NR.")
     parser.add_argument("--ttps-port", required=True, type=int, help="TTPS TX port (0 or 1)")
     parser.add_argument("--sim-slot", required=True, type=int, choices=[0, 1], help="SIM Slot: 0 for SIM1, 1 for SIM2")
-    parser.add_argument("--network-mask", required=True, 
-                        choices=["LTE_ONLY", "NR_ONLY", "NR_LTE", "DEFAULT"], 
-                        help="Network type mask from android_network_manager")
-    parser.add_argument("--rx-scenario", required=True, 
-                        choices=["Combine_4Rx", "Combine_2Rx", "Rx0", "Rx1", "Rx2", "Rx3"], 
-                        help="RX Scenario Name: Combine_4Rx, Combine_2Rx, Rx0, Rx1, Rx2, or Rx3")
+    parser.add_argument("--rx-mode", required=True, 
+                        choices=["combine_4rx", "combine_2rx", "rx0", "rx1", "rx2", "rx3"], 
+                        help="RX Mode: combine_4rx, combine_2rx, rx0, rx1, rx2, or rx3", 
+                        type=str.lower)
                         
     args = parser.parse_args()
     
@@ -237,8 +281,7 @@ def main():
         "tx_state": args.tx_state,
         "ttps_port": args.ttps_port,
         "sim_slot": args.sim_slot,
-        "network_mask": args.network_mask,
-        "rx_scenario": args.rx_scenario
+        "rx_mode": args.rx_mode
     }
     if args.rx_state is not None:
         params["rx_state"] = args.rx_state
