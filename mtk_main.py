@@ -10,6 +10,7 @@ and high-speed RF TX/RX testing via MtkModemSession.
 import sys
 import os
 import argparse
+import time
 
 from adb_device import AdbDevice, FlowResult, check_adb_device, NetworkMask
 from mtk_modem import MtkModemSession, RX_MODES_MAP, ALLOWED_RX_MODES
@@ -173,6 +174,7 @@ def run_mtk_flow(params):
     7. Perform RX antenna diversity testing via MtkModemSession.
     8. Save modem diagnostic logs to disk (.elg) via MtkModemSession.
     9. Stop MTK logger via AdbDevice.
+    10. Toggle airplane mode (enable -> 5s sleep -> disable -> 5s sleep) to refresh network registration.
     """
     print("\n" + "="*70)
     print("STARTING MTK ANTENNA TESTING ORCHESTRATION FLOW")
@@ -200,17 +202,19 @@ def run_mtk_flow(params):
     adb_dev.control_mtk_logger("start")
     
     try:
+        # Step 4: Connect to MtkModemSession once
+        print("\n--- Step 4: Connecting to MtkModemSession ---")
         with MtkModemSession(target_serial=serial, database="auto") as modem:
-            # Step 4: Switch network type via AdbDevice
-            print("\n--- Step 4: Switching Network Type ---")
+            # Step 5: Switch network type via AdbDevice
+            print("\n--- Step 5: Switching Network Type ---")
             res_net = adb_dev.set_network_mask(mask=params["network_mask"], sim_slot=params["sim_slot"])
             if not res_net:
-                err_msg = f"Step 4: 设置网络制式掩码 '{params['network_mask']}' 失败: {res_net.error_message}"
+                err_msg = f"Step 5: 设置网络制式掩码 '{params['network_mask']}' 失败: {res_net.error_message}"
                 print(f"[ERROR] {err_msg}")
                 return FlowResult(False, err_msg)
             
-            # Step 5: Switch TX via MtkModemSession
-            print("\n--- Step 5: Setting TX Antenna Force ---")
+            # Step 6: Switch TX via MtkModemSession
+            print("\n--- Step 6: Setting TX Antenna Force ---")
             res_tx = modem.set_tx_antenna(
                 rat=params["rat"],
                 band=params["band"],
@@ -219,28 +223,28 @@ def run_mtk_flow(params):
                 ttps_port=params["ttps_port"]
             )
             if not res_tx:
-                err_msg = f"Step 5: 设置 TX 强迫发射天线失败: {res_tx.error_message}"
+                err_msg = f"Step 6: 设置 TX 强迫发射天线失败: {res_tx.error_message}"
                 print(f"[ERROR] {err_msg}")
                 return FlowResult(False, err_msg)
                 
-            # Step 6: Switch RX via MtkModemSession
-            print("\n--- Step 6: Setting RX Antenna Test ---")
+            # Step 7: Switch RX via MtkModemSession
+            print("\n--- Step 7: Setting RX Antenna Test ---")
             res_rx = modem.set_rx_mode(
                 rx_mode=params["rx_mode"],
                 rat=params["rat"]
             )
             if not res_rx:
-                err_msg = f"Step 6: 设置 RX 接收分集测试失败: {res_rx.error_message}"
+                err_msg = f"Step 7: 设置 RX 接收分集测试失败: {res_rx.error_message}"
                 print(f"[ERROR] {err_msg}")
                 return FlowResult(False, err_msg)
 
-            # Step 7: Save modem logs
-            print("\n--- Step 7: Saving MTK Modem Diagnostic Logs ---")
+            # Step 8: Save modem logs
+            print("\n--- Step 8: Saving MTK Modem Diagnostic Logs ---")
             out_dir = params.get("out_dir", ".")
             log_file = params.get("log_file", "antenna_test_log.elg")
             res_log = modem.save_logs(out_dir=out_dir, log_file=log_file)
             if not res_log:
-                err_msg = f"Step 7: 保存调制解调器诊断日志失败: {res_log.error_message}"
+                err_msg = f"Step 8: 保存调制解调器诊断日志失败: {res_log.error_message}"
                 print(f"[ERROR] {err_msg}")
                 return FlowResult(False, err_msg)
 
@@ -249,9 +253,27 @@ def run_mtk_flow(params):
         print(f"[ERROR] {err_msg}")
         return FlowResult(False, err_msg)
     finally:
-        # Step 8: Stop log
-        print("\n--- Step 8: Stopping MTK Logger ---")
+        # Step 9: Stop log
+        print("\n--- Step 9: Stopping MTK Logger ---")
         adb_dev.control_mtk_logger("stop")
+
+    # Step 10: Toggle airplane mode to refresh network registration
+    print("\n--- Step 10: Toggling Airplane Mode to Refresh Network Registration ---")
+    res_ap_en = adb_dev.set_airplane_mode("enable")
+    if not res_ap_en:
+        err_msg = f"Step 10: 开启飞行模式失败: {res_ap_en.error_message}"
+        print(f"[ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
+    print("[*] 开启飞行模式完成，休眠 5 秒...")
+    time.sleep(5)
+
+    res_ap_dis = adb_dev.set_airplane_mode("disable")
+    if not res_ap_dis:
+        err_msg = f"Step 10: 关闭飞行模式失败: {res_ap_dis.error_message}"
+        print(f"[ERROR] {err_msg}")
+        return FlowResult(False, err_msg)
+    print("[*] 关闭飞行模式完成，休眠 5 秒以确保重新驻网稳定...")
+    time.sleep(5)
     
     print("\n" + "="*70)
     print("[SUCCESS] All steps in orchestration flow completed successfully!")

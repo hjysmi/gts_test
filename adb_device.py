@@ -239,12 +239,53 @@ def get_hardware_platform(serial: str = "") -> Optional[str]:
         return None
 
 
+def get_device_name_with_serial(serial: str = "") -> str:
+    """
+    通过 ADB 读取目标设备的工程代号与序列号，返回形如 'marvel[NAVR120201]' 的字符串。
+    如果属性读取失败，默认返回 'unknown[<serial>]'。
+    """
+    cmd_dev = ["adb"]
+    if serial:
+        cmd_dev.extend(["-s", str(serial).strip()])
+    cmd_dev.extend(["shell", "getprop", "ro.vendor.hw.device"])
+
+    cmd_sn = ["adb"]
+    if serial:
+        cmd_sn.extend(["-s", str(serial).strip()])
+    cmd_sn.extend(["shell", "getprop", "ro.serialno"])
+
+    dev_name = "unknown"
+    sn = serial or "unknown"
+
+    try:
+        res_dev = subprocess.run(cmd_dev, capture_output=True, text=True, check=False)
+        if res_dev.returncode == 0 and res_dev.stdout.strip():
+            dev_name = res_dev.stdout.strip()
+    except Exception:
+        pass
+
+    try:
+        res_sn = subprocess.run(cmd_sn, capture_output=True, text=True, check=False)
+        if res_sn.returncode == 0 and res_sn.stdout.strip():
+            sn = res_sn.stdout.strip()
+    except Exception:
+        pass
+
+    return f"{dev_name}[{sn}]"
+
+
 class AdbDevice:
     """
     Deep encapsulation of Android Device interaction via ADB and Fastboot.
     """
     def __init__(self, serial: str):
         self.serial = str(serial).strip()
+
+    def get_device_name_with_serial(self) -> str:
+        """
+        获取当前设备的代号与序列号字符串，形如 'marvel[NAVR120201]'。
+        """
+        return get_device_name_with_serial(self.serial)
 
     def verify_connected(self) -> FlowResult:
         """
@@ -450,3 +491,28 @@ class AdbDevice:
             err_msg = f"MTK Logger '{action}' 执行失败: {err}"
             print(f"[ERROR] {err_msg}")
             return FlowResult(False, err_msg)
+
+    def set_airplane_mode(self, enable: Union[bool, str]) -> FlowResult:
+        """
+        Configure airplane mode via Android connectivity command:
+        'cmd connectivity airplane-mode enable' or 'cmd connectivity airplane-mode disable'
+        """
+        if isinstance(enable, str):
+            action = enable.strip().lower()
+            if action not in ("enable", "disable"):
+                return FlowResult(False, f"无效的飞行模式参数: '{enable}'，必须为 'enable' 或 'disable'")
+        else:
+            action = "enable" if enable else "disable"
+
+        cmd = ["shell", "cmd", "connectivity", "airplane-mode", action]
+        print(f"[*] 正在为设备 [{self.serial}] 设置飞行模式: {action} (adb shell cmd connectivity airplane-mode {action})...")
+        res = self.run_adb(cmd)
+        if res.returncode == 0:
+            print(f"[+] 成功设置飞行模式为 {action}")
+            return FlowResult(True, "")
+        else:
+            err = res.stderr.strip() or res.stdout.strip()
+            err_msg = f"设置飞行模式为 {action} 失败 (exit code {res.returncode}): {err}"
+            print(f"[ERROR] {err_msg}")
+            return FlowResult(False, err_msg)
+
